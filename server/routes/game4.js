@@ -83,6 +83,7 @@ router.post('/generate/:groupId', async (req, res) => {
           for (const part of message.content) {
             if (part.type === 'image_url') {
               generatedImage = part.image_url?.url;
+              break;
             }
           }
         }
@@ -127,7 +128,8 @@ router.post('/generate/:groupId', async (req, res) => {
     });
 
     // AI 完成后执行文件保存和 DB 写入（不在限流内）
-    const attemptNum = submissions.length + 1;
+    const currentSubmissions = getAll(`SELECT * FROM game4_submissions WHERE group_id = ${groupId}`);
+    const attemptNum = currentSubmissions.length + 1;
     const uploadsDir = path.join(__dirname, '..', 'data', 'uploads');
     const sketchFilename = `sketch_g${groupId}_a${attemptNum}_${Date.now()}.png`;
     const sketchBase64 = imageData.replace(/^data:image\/\w+;base64,/, '');
