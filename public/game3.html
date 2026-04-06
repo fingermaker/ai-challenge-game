@@ -414,12 +414,9 @@
       } catch (e) {
         console.error('Submit error:', e);
         alert(e?.message || 'AI识别失败，请重试');
-        submitting = false;
-        btn.disabled = false;
-        btn.textContent = '🤖 提交给AI猜';
-        return;
       }
 
+      // 成功和错误路径都重置按钮状态
       submitting = false;
       btn.disabled = false;
       btn.textContent = '🤖 提交给AI猜';

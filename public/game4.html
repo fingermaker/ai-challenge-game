@@ -337,7 +337,6 @@
           document.getElementById('generatingOverlay').classList.add('hidden');
           document.getElementById('resultPlaceholder').classList.remove('hidden');
           btn.disabled = false;
-          btn.textContent = '🎨 AI 生成大片';
           return;
         }
 
@@ -354,20 +353,23 @@
           document.getElementById('scoreDisplay').classList.remove('hidden');
           document.getElementById('currentAttemptScore').textContent = data.score;
 
-          loadState();
+          await loadState();
+          btn.disabled = attemptsUsed >= 3;
+          if (attemptsUsed < 3) btn.textContent = '🎨 AI 生成大片';
         } else {
           alert(data.error || 'AI生成失败');
           document.getElementById('resultPlaceholder').classList.remove('hidden');
+          btn.disabled = false;
+          btn.textContent = '🎨 AI 生成大片';
         }
       } catch (e) {
         console.error('Error:', e);
         document.getElementById('generatingOverlay').classList.add('hidden');
         document.getElementById('resultPlaceholder').classList.remove('hidden');
         alert('生成失败，请重试');
+        btn.disabled = false;
+        btn.textContent = '🎨 AI 生成大片';
       }
-
-      btn.disabled = attemptsUsed >= 3;
-      if (attemptsUsed < 3) btn.textContent = '🎨 AI 生成大片';
     }
 
     socket.on('force-logout', () => { localStorage.clear(); window.location.href = '/'; });
