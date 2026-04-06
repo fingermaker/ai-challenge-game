@@ -332,6 +332,15 @@
         });
         const data = await res.json();
 
+        if (!res.ok) {
+          alert(data.error || 'AI服务繁忙，请稍后重试');
+          document.getElementById('generatingOverlay').classList.add('hidden');
+          document.getElementById('resultPlaceholder').classList.remove('hidden');
+          btn.disabled = false;
+          btn.textContent = '🎨 AI 生成大片';
+          return;
+        }
+
         document.getElementById('generatingOverlay').classList.add('hidden');
 
         if (data.success) {

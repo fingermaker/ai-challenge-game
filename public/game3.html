@@ -382,6 +382,14 @@
         });
         const data = await res.json();
 
+        if (!res.ok) {
+          alert(data.error || 'AI服务繁忙，请稍后重试');
+          submitting = false;
+          btn.disabled = false;
+          btn.textContent = '🤖 提交给AI猜';
+          return;
+        }
+
         // Add to guess list
         const list = document.getElementById('guessList');
         const div = document.createElement('div');
@@ -405,6 +413,11 @@
         }
       } catch (e) {
         console.error('Submit error:', e);
+        alert(e?.message || 'AI识别失败，请重试');
+        submitting = false;
+        btn.disabled = false;
+        btn.textContent = '🤖 提交给AI猜';
+        return;
       }
 
       submitting = false;
