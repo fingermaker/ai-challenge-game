@@ -612,32 +612,99 @@
       loadGameState('game4');
       const sRes = await fetch('/api/admin/submissions/game4', { headers });
       const subs = await sRes.json();
-      let html = '';
-      if (subs.length) {
-        html = '<div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(280px,1fr)); gap:1.5rem;">';
-        subs.forEach(s => {
-          const genImgHtml = s.generated_path 
-            ? `<div style="text-align:center;"><p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:0.25rem;">AI生成结果</p><img src="/uploads/${s.generated_path}" onclick="event.stopPropagation(); openLightbox(this.src)" title="点击放大"></div>` 
-            : `<div style="display:flex; flex-direction:column; justify-content:center; align-items:center; background:rgba(0,0,0,0.2); border-radius:var(--radius-sm);"><span style="color:var(--text-muted); font-size:0.8rem;">生成失败/无图片</span></div>`;
 
-          html += `<div style="background:var(--bg-glass); border:var(--border-glass); border-radius:var(--radius-md); overflow:hidden; transition:var(--transition);">
-            <div style="padding:0.6rem 0.8rem; background:rgba(0, 212, 255, 0.1); border-bottom:var(--border-glass); font-family:'Orbitron'; font-weight:700; display:flex; justify-content:space-between; align-items:center;">
-              <span style="color:var(--text-primary);">第 ${s.group_id} 组</span>
-              <span style="color:var(--neon-green); font-size:0.9rem;">尝试 #${s.attempt_number} <span style="margin-left:0.5rem;color:var(--neon-purple);">${s.score}分</span></span>
-            </div>
-            <div class="image-grid">
-              <div style="text-align:center;">
-                <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:0.25rem;">学生线稿</p>
-                <img src="/uploads/${s.sketch_path}" onclick="event.stopPropagation(); openLightbox(this.src)" title="点击放大">
+      if (!subs.length) {
+        document.getElementById('game4Submissions').innerHTML = '<p style="color:var(--text-muted)">暂无提交</p>';
+        return;
+      }
+
+      // Group submissions by group_id
+      const groups = {};
+      subs.forEach(s => {
+        if (!groups[s.group_id]) groups[s.group_id] = [];
+        groups[s.group_id].push(s);
+      });
+
+      // Sort group IDs numerically
+      const sortedGroupIds = Object.keys(groups).map(Number).sort((a, b) => a - b);
+
+      let html = '<div style="display:flex; flex-direction:column; gap:1.5rem;">';
+
+      sortedGroupIds.forEach(groupId => {
+        const attempts = groups[groupId].sort((a, b) => a.attempt_number - b.attempt_number);
+        const attemptCount = attempts.length;
+
+        // Build attempt columns
+        let attemptsHtml = '';
+        attempts.forEach(s => {
+          const sketchUrl = `/uploads/${s.sketch_path}`;
+          const hasGenerated = s.generated_path && s.generated_path.trim() !== '';
+          const genUrl = hasGenerated ? `/uploads/${s.generated_path}` : null;
+
+          const sketchImgHtml = `
+            <div style="text-align:center; flex:1;">
+              <p style="font-size:0.7rem; color:var(--text-muted); margin-bottom:0.25rem;">线稿</p>
+              <img src="${sketchUrl}"
+                   onclick="openLightbox(this.src)"
+                   title="点击放大"
+                   style="width:100%; aspect-ratio:1; object-fit:cover; border-radius:var(--radius-sm);
+                          cursor:pointer; border:1px solid rgba(255,255,255,0.1);
+                          transition:transform 0.2s, border-color 0.2s;"
+                   onmouseover="this.style.transform='scale(1.03)'; this.style.borderColor='var(--neon-blue)'"
+                   onmouseout="this.style.transform='scale(1)'; this.style.borderColor='rgba(255,255,255,0.1)'">
+            </div>`;
+
+          const genImgHtml = genUrl
+            ? `<div style="text-align:center; flex:1;">
+                <p style="font-size:0.7rem; color:var(--text-muted); margin-bottom:0.25rem;">AI生成</p>
+                <img src="${genUrl}"
+                     onclick="openLightbox(this.src)"
+                     title="点击放大"
+                     style="width:100%; aspect-ratio:1; object-fit:cover; border-radius:var(--radius-sm);
+                            cursor:pointer; border:1px solid rgba(255,255,255,0.1);
+                            transition:transform 0.2s, border-color 0.2s;"
+                     onmouseover="this.style.transform='scale(1.03)'; this.style.borderColor='var(--neon-purple)'"
+                     onmouseout="this.style.transform='scale(1)'; this.style.borderColor='rgba(255,255,255,0.1)'">
+               </div>`
+            : `<div style="flex:1; text-align:center;">
+                <p style="font-size:0.7rem; color:var(--text-muted); margin-bottom:0.25rem;">AI生成</p>
+                <div class="no-image-placeholder"
+                     style="aspect-ratio:1; display:flex; align-items:center; justify-content:center;
+                            background:rgba(0,0,0,0.25); border-radius:var(--radius-sm);
+                            border:1px dashed rgba(255,255,255,0.15);">
+                  <span style="color:var(--text-muted); font-size:0.78rem;">等待生成...</span>
+                </div>
+               </div>`;
+
+          attemptsHtml += `
+            <div style="flex:1; min-width:160px; max-width:260px; padding:0.6rem;
+                        background:rgba(0,0,0,0.15); border-radius:var(--radius-sm);
+                        border:1px solid rgba(255,255,255,0.06);">
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+                <span style="font-size:0.8rem; font-weight:600; color:var(--neon-green);">尝试 #${s.attempt_number}</span>
+                <span style="font-size:0.85rem; font-family:'Orbitron'; font-weight:700; color:var(--neon-purple);">${s.score}分</span>
               </div>
-              ${genImgHtml}
+              <div style="display:flex; gap:0.4rem;">
+                ${sketchImgHtml}
+                ${genImgHtml}
+              </div>
+            </div>`;
+        });
+
+        html += `
+          <div style="background:var(--bg-glass); border:var(--border-glass); border-radius:var(--radius-md); overflow:hidden;">
+            <div style="padding:0.65rem 1rem; background:rgba(0,212,255,0.08); border-bottom:var(--border-glass);
+                        display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-family:'Orbitron'; font-weight:700; color:var(--text-primary); font-size:1rem;">第 ${groupId} 组</span>
+              <span style="font-size:0.82rem; color:var(--text-secondary);">共 ${attemptCount} 次尝试</span>
+            </div>
+            <div style="padding:0.75rem; display:flex; flex-wrap:wrap; gap:0.75rem;">
+              ${attemptsHtml}
             </div>
           </div>`;
-        });
-        html += '</div>';
-      } else {
-        html = '<p style="color:var(--text-muted)">暂无提交</p>';
-      }
+      });
+
+      html += '</div>';
       document.getElementById('game4Submissions').innerHTML = html;
     }
 
@@ -715,7 +782,13 @@
 
     // Socket events
     socket.on('group-status-change', () => loadOverview());
-    socket.on('submission-update', () => loadOverview());
+    socket.on('submission-update', ({ gameId } = {}) => {
+      loadOverview();
+      if (gameId === 'game4' &&
+          !document.getElementById('section-game4-ctrl').classList.contains('hidden')) {
+        loadGame4();
+      }
+    });
     socket.on('game-state-update', ({ gameId }) => {
       if (gameId === 'game2' && !document.getElementById('section-game2-ctrl').classList.contains('hidden')) loadGame2();
     });
