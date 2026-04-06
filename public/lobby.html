@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 挑战赛 - 游戏大厅</title>
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    .lobby-header {
+      text-align: center;
+      padding: 3rem 0 1rem;
+    }
+    .lobby-header h1 { margin-bottom: 0.5rem; }
+    .lobby-header p { color: var(--text-secondary); font-size: 1.1rem; }
+
+    .total-score-display {
+      text-align: center;
+      padding: 2rem;
+      margin-bottom: 2rem;
+    }
+    .total-score-number {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 4rem;
+      font-weight: 900;
+      background: var(--gradient-main);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .total-score-label {
+      color: var(--text-secondary);
+      font-size: 1rem;
+      margin-top: 0.25rem;
+    }
+  </style>
+</head>
+<body>
+  <!-- Navbar -->
+  <nav class="navbar">
+    <a href="/lobby.html" class="navbar-brand">
+      <span class="logo-icon">🤖</span>
+      <span>AI 挑战赛</span>
+    </a>
+    <div class="navbar-info">
+      <span class="group-badge" id="groupBadge">👥 第 - 组</span>
+      <span class="score-badge" id="scoreBadge">🏆 0 分</span>
+      <button class="btn btn-ghost btn-sm" onclick="logout()">退出</button>
+    </div>
+  </nav>
+
+  <div class="container">
+    <div class="lobby-header animate-fadeInUp">
+      <h1 class="gradient-text">🎮 游戏大厅</h1>
+      <p>选择一个挑战项目开始比赛</p>
+    </div>
+
+    <div class="total-score-display glass-card glass-card--no-hover animate-scaleIn">
+      <div class="total-score-label">当前总分</div>
+      <div class="total-score-number" id="totalScore">0</div>
+    </div>
+
+    <div class="games-grid" id="gamesGrid">
+      <div class="game-card animate-fadeInUp delay-1" onclick="goToGame('game1')">
+        <div class="game-icon">🎬</div>
+        <div class="game-title">AI 视频侦查员</div>
+        <div class="game-desc">辨别视频真假，考验你的火眼金睛！每题5分</div>
+        <div class="game-score" id="game1Score">得分：0</div>
+      </div>
+
+      <div class="game-card animate-fadeInUp delay-2" onclick="goToGame('game2')">
+        <div class="game-icon">👤</div>
+        <div class="game-title">人脸真假大比拼</div>
+        <div class="game-desc">哪张是真人脸？AI生成的人脸能不能骗到你？</div>
+        <div class="game-score" id="game2Score">得分：0</div>
+      </div>
+
+      <div class="game-card animate-fadeInUp delay-3" onclick="goToGame('game3')">
+        <div class="game-icon">🎨</div>
+        <div class="game-title">你画我猜</div>
+        <div class="game-desc">画出主题，让AI猜对就得分！每题5分</div>
+        <div class="game-score" id="game3Score">得分：0</div>
+      </div>
+
+      <div class="game-card animate-fadeInUp delay-4" onclick="goToGame('game4')">
+        <div class="game-icon">✏️</div>
+        <div class="game-title">线稿变大片</div>
+        <div class="game-desc">手绘线稿，让AI变成精美照片！创意评分5-10分</div>
+        <div class="game-score" id="game4Score">得分：0</div>
+      </div>
+
+      <div class="game-card animate-fadeInUp delay-5" id="extensionCard" onclick="goToGame('extensions')" style="display: none;">
+        <div class="game-icon">🧩</div>
+        <div class="game-title">扩展挑战</div>
+        <div class="game-desc">Google AI 趣味小游戏，放松一下吧！</div>
+        <div class="game-score" style="color: var(--neon-yellow);">仅供娱乐</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const groupId = localStorage.getItem('groupId');
+    const token = localStorage.getItem('token');
+    
+    if (!groupId || !token) {
+      window.location.href = '/';
+    }
+
+    const socket = io();
+    socket.emit('register-group', { groupId: parseInt(groupId), token });
+
+    document.getElementById('groupBadge').textContent = `👥 第 ${groupId} 组`;
+
+    // Load scores
+    async function loadScores() {
+      try {
+        const games = ['game1', 'game2', 'game3', 'game4'];
+        let total = 0;
+        for (const game of games) {
+          const res = await fetch(`/api/${game}/score/${groupId}`);
+          const data = await res.json();
+          document.getElementById(`${game}Score`).textContent = `得分：${data.score}`;
+          total += data.score;
+        }
+        document.getElementById('totalScore').textContent = total;
+        document.getElementById('scoreBadge').textContent = `🏆 ${total} 分`;
+      } catch (e) {
+        console.error('Load scores error:', e);
+      }
+    }
+
+    // Check extensions
+    async function checkExtensions() {
+      try {
+        const res = await fetch('/api/auth/extensions-status');
+        const data = await res.json();
+        document.getElementById('extensionCard').style.display = data.enabled ? 'block' : 'none';
+      } catch (e) {
+        document.getElementById('extensionCard').style.display = 'none';
+      }
+    }
+
+    function goToGame(game) {
+      if (game === 'extensions') {
+        window.location.href = '/extensions.html';
+      } else {
+        window.location.href = `/${game}.html`;
+      }
+    }
+
+    function logout() {
+      fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ groupId: parseInt(groupId), token })
+      }).then(() => {
+        localStorage.removeItem('groupId');
+        localStorage.removeItem('token');
+        window.location.href = '/';
+      });
+    }
+
+    // Socket events
+    socket.on('force-logout', (data) => {
+      alert(data.message);
+      localStorage.removeItem('groupId');
+      localStorage.removeItem('token');
+      window.location.href = '/';
+    });
+
+    socket.on('extensions-toggle', ({ enabled }) => {
+      document.getElementById('extensionCard').style.display = enabled ? 'block' : 'none';
+    });
+
+    socket.on('submission-update', () => loadScores());
+
+    // Keep alive
+    setInterval(() => {
+      socket.emit('ping-alive', { groupId: parseInt(groupId) });
+    }, 30000);
+
+    loadScores();
+    checkExtensions();
+  </script>
+</body>
+</html>

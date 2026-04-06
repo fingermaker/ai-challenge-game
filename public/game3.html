@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 挑战赛 - 你画我猜</title>
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    .game-content { max-width: 1000px; margin: 0 auto; padding: 2rem 1rem; position: relative; z-index: 1; }
+    .draw-layout { display: grid; grid-template-columns: 1fr 300px; gap: 2rem; }
+    @media (max-width: 768px) { .draw-layout { grid-template-columns: 1fr; } }
+    .theme-display {
+      text-align: center; padding: 1.5rem;
+      background: rgba(168, 85, 247, 0.15);
+      border: 1px solid rgba(168, 85, 247, 0.3);
+      border-radius: var(--radius-lg); margin-bottom: 1.5rem;
+    }
+    .theme-word {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 2.5rem; font-weight: 900;
+      color: var(--neon-purple);
+    }
+    .theme-hint { color: var(--text-secondary); margin-top: 0.5rem; }
+    .ai-guess-panel {
+      background: var(--bg-card); border: var(--border-glass);
+      border-radius: var(--radius-lg); padding: 1.5rem;
+    }
+    .guess-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 0.75rem; border-radius: var(--radius-sm);
+      margin-bottom: 0.5rem; font-size: 0.95rem;
+    }
+    .guess-item.correct { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
+    .guess-item.wrong { background: rgba(239, 68, 68, 0.1); color: var(--text-secondary); }
+    .progress-bar {
+      width: 100%; height: 8px; background: rgba(255,255,255,0.1);
+      border-radius: 4px; overflow: hidden; margin-top: 1rem;
+    }
+    .progress-fill {
+      height: 100%; background: var(--gradient-main);
+      border-radius: 4px; transition: width 0.3s;
+    }
+    .canvas-area { background: white; border-radius: var(--radius-lg); overflow: hidden; border: 2px solid rgba(0,212,255,0.3); }
+    .canvas-area canvas {
+      width: 100%;
+      height: 500px;
+      display: block;
+      cursor: crosshair;
+      touch-action: none;
+    }
+    .tool-bar {
+      display: flex; gap: 0.5rem; padding: 0.75rem 1rem;
+      background: var(--bg-secondary); border-top: var(--border-glass);
+      flex-wrap: wrap; align-items: center;
+    }
+    .tool-btn {
+      padding: 0.4rem 0.8rem; border: 1px solid rgba(255,255,255,0.15);
+      border-radius: var(--radius-sm); background: var(--bg-glass);
+      color: var(--text-primary); cursor: pointer; font-size: 0.85rem;
+      transition: var(--transition);
+    }
+    .tool-btn:hover, .tool-btn.active { border-color: var(--neon-blue); background: rgba(0,212,255,0.15); }
+    .brush-size { width: 80px; }
+    .color-picker { width: 32px; height: 32px; border: none; border-radius: 50%; cursor: pointer; }
+    .per-theme-timer {
+      font-family: 'Orbitron', sans-serif; font-size: 1.5rem;
+      color: var(--neon-orange); font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <nav class="navbar">
+    <a href="/lobby.html" class="navbar-brand"><span class="logo-icon">🎨</span><span>你画我猜</span></a>
+    <div class="navbar-info">
+      <span class="group-badge" id="groupBadge">👥 第 - 组</span>
+      <span class="score-badge" id="scoreBadge">🏆 0 分</span>
+      <a href="/lobby.html" class="btn btn-ghost btn-sm">← 返回大厅</a>
+    </div>
+  </nav>
+
+  <div class="game-content">
+    <div id="waitingState" class="glass-card text-center" style="padding: 4rem 2rem;">
+      <div class="waiting-state">
+        <div class="spinner"></div>
+        <h2>等待老师开始...</h2>
+      </div>
+    </div>
+
+    <div id="gameActive" class="hidden">
+      <div class="flex-between mb-3" style="flex-wrap: wrap; gap: 1rem;">
+        <h2>第 <span id="themeIndex">1</span>/<span id="totalThemes">10</span> 题</h2>
+        <div class="flex gap-2 align-center">
+          <span class="per-theme-timer" id="themeTimer">20s</span>
+          <div class="timer" id="globalTimer">⏰ <span id="globalTimerValue">10:00</span></div>
+        </div>
+      </div>
+
+      <div class="theme-display">
+        <div>请画出：</div>
+        <div class="theme-word" id="themeWord">猫</div>
+        <div class="theme-hint">画完后点击"提交给AI猜"</div>
+      </div>
+
+      <div class="draw-layout">
+        <div>
+          <div class="canvas-area">
+            <canvas id="drawCanvas"></canvas>
+            <div class="tool-bar">
+              <button class="tool-btn active" id="penTool" onclick="setTool('pen')">✏️ 画笔</button>
+              <button class="tool-btn" id="eraserTool" onclick="setTool('eraser')">⬜ 橡皮</button>
+              <input type="range" class="brush-size" min="2" max="20" value="4" id="brushSize" title="笔刷大小">
+              <input type="color" class="color-picker" value="#000000" id="colorPicker">
+              <button class="tool-btn" onclick="undoCanvas()">↩️ 撤销</button>
+              <button class="tool-btn" onclick="clearCanvas()">🗑️ 清除</button>
+              <button class="btn btn-primary btn-sm" onclick="submitDrawing()" id="submitDrawBtn">🤖 提交给AI猜</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="ai-guess-panel">
+          <h3 style="margin-bottom: 1rem;">🤖 AI 猜测记录</h3>
+          <div id="guessList"></div>
+          <div class="progress-bar">
+            <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+          </div>
+          <p class="mt-2 text-center" style="color: var(--text-secondary); font-size: 0.85rem;">
+            当前得分: <span id="currentScore" style="color: var(--neon-purple); font-weight: 700;">0</span> 分
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div id="doneState" class="hidden">
+      <div class="glass-card text-center" style="padding: 4rem 2rem;">
+        <p style="font-size: 4rem;">🎨</p>
+        <h2>绘画挑战完成！</h2>
+        <p style="font-family: 'Orbitron'; font-size: 3rem; color: var(--neon-purple); font-weight: 900; margin-top: 1rem;" id="finalScore">0</p>
+        <a href="/lobby.html" class="btn btn-primary btn-lg mt-4">返回大厅</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const groupId = localStorage.getItem('groupId');
+    const token = localStorage.getItem('token');
+    if (!groupId || !token) window.location.href = '/';
+
+    const socket = io();
+    socket.emit('register-group', { groupId: parseInt(groupId), token });
+    document.getElementById('groupBadge').textContent = `👥 第 ${groupId} 组`;
+
+    // Canvas setup
+    const canvas = document.getElementById('drawCanvas');
+    const ctx = canvas.getContext('2d');
+    let drawing = false;
+    let tool = 'pen';
+    let history = [];
+    let currentPath = [];
+
+    // High DPI support
+    function resizeCanvas() {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      ctx.scale(dpr, dpr);
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, rect.width, rect.height);
+      // Redraw history
+      redrawHistory();
+    }
+
+    function redrawHistory() {
+      const rect = canvas.getBoundingClientRect();
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, rect.width, rect.height);
+      history.forEach(stroke => {
+        if (stroke.length < 2) return;
+        ctx.beginPath();
+        ctx.strokeStyle = stroke[0].color;
+        ctx.lineWidth = stroke[0].size;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.moveTo(stroke[0].x, stroke[0].y);
+        for (let i = 1; i < stroke.length; i++) {
+          ctx.lineTo(stroke[i].x, stroke[i].y);
+        }
+        ctx.stroke();
+      });
+    }
+
+    canvas.addEventListener('mousedown', startDraw);
+    canvas.addEventListener('mousemove', draw);
+    canvas.addEventListener('mouseup', stopDraw);
+    canvas.addEventListener('mouseleave', stopDraw);
+    canvas.addEventListener('touchstart', e => { e.preventDefault(); startDraw(e.touches[0]); });
+    canvas.addEventListener('touchmove', e => { e.preventDefault(); draw(e.touches[0]); });
+    canvas.addEventListener('touchend', stopDraw);
+
+    function getPos(e) {
+      const rect = canvas.getBoundingClientRect();
+      return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    }
+
+    function startDraw(e) {
+      drawing = true;
+      const pos = getPos(e);
+      const color = tool === 'eraser' ? '#ffffff' : document.getElementById('colorPicker').value;
+      const size = tool === 'eraser' ? 20 : parseInt(document.getElementById('brushSize').value);
+      currentPath = [{ x: pos.x, y: pos.y, color, size }];
+      ctx.beginPath();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = size;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.moveTo(pos.x, pos.y);
+    }
+
+    function draw(e) {
+      if (!drawing) return;
+      const pos = getPos(e);
+      const color = tool === 'eraser' ? '#ffffff' : document.getElementById('colorPicker').value;
+      const size = tool === 'eraser' ? 20 : parseInt(document.getElementById('brushSize').value);
+      currentPath.push({ x: pos.x, y: pos.y, color, size });
+      ctx.lineTo(pos.x, pos.y);
+      ctx.stroke();
+    }
+
+    function stopDraw() {
+      if (drawing && currentPath.length > 0) {
+        history.push([...currentPath]);
+      }
+      drawing = false;
+      currentPath = [];
+    }
+
+    function setTool(t) {
+      tool = t;
+      document.getElementById('penTool').classList.toggle('active', t === 'pen');
+      document.getElementById('eraserTool').classList.toggle('active', t === 'eraser');
+    }
+
+    function undoCanvas() {
+      history.pop();
+      redrawHistory();
+    }
+
+    function clearCanvas() {
+      history = [];
+      const rect = canvas.getBoundingClientRect();
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, rect.width, rect.height);
+    }
+
+    // Game state
+    let themes = [];
+    let currentThemeIdx = 0;
+    let totalScore = 0;
+    let globalTimeLeft = 600;
+    let themeTimeLeft = 20;
+    let globalInterval = null;
+    let themeInterval = null;
+    let submitting = false;
+
+    async function loadGameState() {
+      try {
+        const res = await fetch(`/api/game3/state/${groupId}`);
+        const data = await res.json();
+
+        if (!data.active) {
+          document.getElementById('waitingState').classList.remove('hidden');
+          document.getElementById('gameActive').classList.add('hidden');
+          return;
+        }
+
+        document.getElementById('waitingState').classList.add('hidden');
+        
+        const gameActiveEl = document.getElementById('gameActive');
+        const wasHidden = gameActiveEl.classList.contains('hidden');
+        gameActiveEl.classList.remove('hidden');
+        
+        if (wasHidden) {
+          // Ensure canvas interior size is correctly initialized once it becomes visible
+          setTimeout(resizeCanvas, 50);
+        }
+
+        themes = data.themes;
+        totalScore = data.totalScore;
+        currentThemeIdx = data.submissions.length;
+        globalTimeLeft = data.timeLimit;
+
+        document.getElementById('totalThemes').textContent = themes.length;
+        document.getElementById('currentScore').textContent = totalScore;
+        document.getElementById('scoreBadge').textContent = `🏆 ${totalScore} 分`;
+
+        // Populate guess list
+        const list = document.getElementById('guessList');
+        list.innerHTML = '';
+        data.submissions.forEach(s => {
+          const div = document.createElement('div');
+          div.className = `guess-item ${s.is_correct ? 'correct' : 'wrong'}`;
+          div.innerHTML = `<span>${s.theme}</span><span>${s.is_correct ? '✅ +5' : '❌ ' + s.recognized_as}</span>`;
+          list.appendChild(div);
+        });
+
+        if (currentThemeIdx >= themes.length) {
+          endGame();
+          return;
+        }
+
+        updateTheme();
+        startTimers();
+        updateProgress();
+      } catch (e) {
+        console.error('Error:', e);
+      }
+    }
+
+    function updateTheme() {
+      document.getElementById('themeIndex').textContent = currentThemeIdx + 1;
+      document.getElementById('themeWord').textContent = themes[currentThemeIdx];
+      themeTimeLeft = 20;
+      clearCanvas();
+    }
+
+    function startTimers() {
+      if (globalInterval) clearInterval(globalInterval);
+      if (themeInterval) clearInterval(themeInterval);
+
+      globalInterval = setInterval(() => {
+        globalTimeLeft--;
+        const mins = Math.floor(globalTimeLeft / 60);
+        const secs = globalTimeLeft % 60;
+        document.getElementById('globalTimerValue').textContent = 
+          `${mins}:${secs.toString().padStart(2, '0')}`;
+        if (globalTimeLeft <= 0) {
+          endGame();
+        }
+      }, 1000);
+
+      themeInterval = setInterval(() => {
+        themeTimeLeft--;
+        document.getElementById('themeTimer').textContent = `${themeTimeLeft}s`;
+        if (themeTimeLeft <= 5) {
+          document.getElementById('themeTimer').style.color = '#ef4444';
+        }
+        if (themeTimeLeft <= 0) {
+          autoSubmit();
+        }
+      }, 1000);
+    }
+
+    function resetThemeTimer() {
+      themeTimeLeft = 20;
+      document.getElementById('themeTimer').textContent = '20s';
+      document.getElementById('themeTimer').style.color = 'var(--neon-orange)';
+    }
+
+    function updateProgress() {
+      const pct = (currentThemeIdx / themes.length) * 100;
+      document.getElementById('progressFill').style.width = pct + '%';
+    }
+
+    async function submitDrawing() {
+      if (submitting) return;
+      submitting = true;
+      const btn = document.getElementById('submitDrawBtn');
+      btn.disabled = true;
+      btn.textContent = '🔄 AI正在识别...';
+
+      const imageData = canvas.toDataURL('image/png');
+      try {
+        const res = await fetch(`/api/game3/recognize/${groupId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            imageData,
+            themeIndex: currentThemeIdx,
+            theme: themes[currentThemeIdx]
+          })
+        });
+        const data = await res.json();
+
+        // Add to guess list
+        const list = document.getElementById('guessList');
+        const div = document.createElement('div');
+        div.className = `guess-item ${data.isMatch ? 'correct' : 'wrong'}`;
+        div.innerHTML = `<span>${themes[currentThemeIdx]}</span><span>${data.isMatch ? '✅ +5' : '❌ ' + data.guess}</span>`;
+        list.insertBefore(div, list.firstChild);
+
+        if (data.isMatch) totalScore += 5;
+        document.getElementById('currentScore').textContent = totalScore;
+        document.getElementById('scoreBadge').textContent = `🏆 ${totalScore} 分`;
+
+        // Next theme
+        currentThemeIdx++;
+        updateProgress();
+
+        if (currentThemeIdx >= themes.length) {
+          endGame();
+        } else {
+          updateTheme();
+          resetThemeTimer();
+        }
+      } catch (e) {
+        console.error('Submit error:', e);
+      }
+
+      submitting = false;
+      btn.disabled = false;
+      btn.textContent = '🤖 提交给AI猜';
+    }
+
+    function autoSubmit() {
+      submitDrawing();
+    }
+
+    function endGame() {
+      if (globalInterval) clearInterval(globalInterval);
+      if (themeInterval) clearInterval(themeInterval);
+      document.getElementById('gameActive').classList.add('hidden');
+      document.getElementById('doneState').classList.remove('hidden');
+      document.getElementById('finalScore').textContent = totalScore + ' 分';
+    }
+
+    socket.on('game-state-update', ({ gameId }) => { if (gameId === 'game3') loadGameState(); });
+    socket.on('game-reset', ({ gameId }) => { if (gameId === 'game3') loadGameState(); });
+    socket.on('force-logout', () => { localStorage.clear(); window.location.href = '/'; });
+
+    // Init
+    setTimeout(resizeCanvas, 100);
+    window.addEventListener('resize', resizeCanvas);
+    loadGameState();
+  </script>
+</body>
+</html>

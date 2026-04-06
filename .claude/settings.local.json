@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C \"E:/网站开发/AI赛游戏\" log --oneline -5)",
+      "Bash(git -C \"E:/网站开发/AI赛游戏\" status --short)",
+      "Bash(git -C \"E:/网站开发/AI赛游戏\" init)",
+      "Bash(git -C \"E:/网站开发/AI赛游戏\" add -A)",
+      "Bash(git -C \"E:/网站开发/AI赛游戏\" commit -m \"chore: initial commit before platform fixes\")"
+    ]
+  }
+}

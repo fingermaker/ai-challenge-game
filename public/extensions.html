@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 挑战赛 - 扩展挑战</title>
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    .game-content { max-width: 1000px; margin: 0 auto; padding: 2rem 1rem; position: relative; z-index: 1; }
+    .ext-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; }
+    .ext-card {
+      background: var(--bg-card); border: var(--border-glass);
+      border-radius: var(--radius-lg); overflow: hidden;
+      cursor: pointer; transition: var(--transition);
+      text-decoration: none; color: inherit; display: block;
+    }
+    .ext-card:hover { transform: translateY(-5px); box-shadow: var(--shadow-elevated), var(--glow-blue); border-color: rgba(0,212,255,0.3); }
+    .ext-thumb { height: 160px; display: flex; align-items: center; justify-content: center; font-size: 4rem; background: linear-gradient(135deg, rgba(0,212,255,0.1), rgba(168,85,247,0.1)); }
+    .ext-info { padding: 1.5rem; }
+    .ext-info h3 { font-family: 'Orbitron', sans-serif; margin-bottom: 0.5rem; font-size: 1.1rem; }
+    .ext-info p { color: var(--text-secondary); font-size: 0.9rem; line-height: 1.5; }
+    .ext-badge {
+      display: inline-block; padding: 0.25rem 0.75rem; border-radius: var(--radius-xl);
+      font-size: 0.75rem; font-weight: 600; margin-top: 0.75rem;
+      background: rgba(251, 191, 36, 0.15); color: var(--neon-yellow); border: 1px solid rgba(251, 191, 36, 0.3);
+    }
+  </style>
+</head>
+<body>
+  <nav class="navbar">
+    <a href="/lobby.html" class="navbar-brand"><span class="logo-icon">🧩</span><span>扩展挑战</span></a>
+    <div class="navbar-info">
+      <span class="group-badge" id="groupBadge">👥 第 - 组</span>
+      <a href="/lobby.html" class="btn btn-ghost btn-sm">← 返回大厅</a>
+    </div>
+  </nav>
+
+  <div class="game-content">
+    <div class="text-center mb-3 animate-fadeInUp">
+      <h1 class="gradient-text">🧩 Google AI 趣味小游戏</h1>
+      <p style="color: var(--text-secondary); margin-top: 0.5rem;">放松一下，这些游戏不计入比赛分数（点击将跳转至 Google 官方页面）</p>
+    </div>
+
+    <div class="ext-grid">
+      <a class="ext-card animate-fadeInUp delay-1" href="/games/hole-in-one/index.html" target="_blank" rel="noopener">
+        <div class="ext-thumb">⛳</div>
+        <div class="ext-info">
+          <h3>Hole in One</h3>
+          <p>基于物理和 AI 构建的趣味高尔夫游戏。</p>
+          <span class="ext-badge">🏆 本地游戏</span>
+        </div>
+      </a>
+      <a class="ext-card animate-fadeInUp delay-2" href="/games/stretchy-cat/index.html" target="_blank" rel="noopener">
+        <div class="ext-thumb">🐈</div>
+        <div class="ext-info">
+          <h3>Stretchy Cat</h3>
+          <p>伸展猫咪填满所有空间，趣味解谜挑战。</p>
+          <span class="ext-badge">🏆 本地游戏</span>
+        </div>
+      </a>
+      <a class="ext-card animate-fadeInUp delay-3" href="/games/supersonic-bot/index.html" target="_blank" rel="noopener">
+        <div class="ext-thumb">🚀</div>
+        <div class="ext-info">
+          <h3>Supersonic Bot</h3>
+          <p>声控驱动飞行机器人，避开障碍飞向终点。</p>
+          <span class="ext-badge">🏆 本地游戏</span>
+        </div>
+      </a>
+      <a class="ext-card animate-fadeInUp delay-4" href="/games/nonogram/index.html" target="_blank" rel="noopener">
+        <div class="ext-thumb">🧩</div>
+        <div class="ext-info">
+          <h3>Nonogram</h3>
+          <p>经典的数织解谜游戏，用逻辑找出隐藏的图案。</p>
+          <span class="ext-badge">🏆 本地游戏</span>
+        </div>
+      </a>
+      <a class="ext-card animate-fadeInUp delay-5" href="https://quickdraw.withgoogle.com/" target="_blank" rel="noopener">
+        <div class="ext-thumb">🎨</div>
+        <div class="ext-info">
+          <h3>Quick, Draw!</h3>
+          <p>看 AI 能否猜出你在画什么？20秒限时挑战你的绘画速度！</p>
+          <span class="ext-badge">🌐 Google 官方</span>
+        </div>
+      </a>
+      <a class="ext-card animate-fadeInUp delay-2" href="https://artsandculture.google.com/experiment/blob-opera/AAHWrq360NcGbw" target="_blank" rel="noopener">
+        <div class="ext-thumb">🎵</div>
+        <div class="ext-info">
+          <h3>Blob Opera</h3>
+          <p>用 AI 指挥四个可爱的 Blob 歌剧演员，创造和声音乐！</p>
+          <span class="ext-badge">🌐 Google Arts</span>
+        </div>
+      </a>
+      <a class="ext-card animate-fadeInUp delay-3" href="https://teachablemachine.withgoogle.com/" target="_blank" rel="noopener">
+        <div class="ext-thumb">🤖</div>
+        <div class="ext-info">
+          <h3>Teachable Machine</h3>
+          <p>训练自己的 AI 模型！用摄像头教会电脑识别手势和物体</p>
+          <span class="ext-badge">🌐 Google AI</span>
+        </div>
+      </a>
+      <a class="ext-card animate-fadeInUp delay-4" href="https://musiclab.chromeexperiments.com/" target="_blank" rel="noopener">
+        <div class="ext-thumb">🎶</div>
+        <div class="ext-info">
+          <h3>Chrome Music Lab</h3>
+          <p>用 AI 探索音乐的乐趣，制作节奏、旋律和和弦！</p>
+          <span class="ext-badge">🌐 Chrome 实验</span>
+        </div>
+      </a>
+      <a class="ext-card animate-fadeInUp delay-5" href="https://experiments.withgoogle.com/autodraw" target="_blank" rel="noopener">
+        <div class="ext-thumb">✏️</div>
+        <div class="ext-info">
+          <h3>AutoDraw</h3>
+          <p>随手涂鸦，AI 帮你变成专业图标和插画！</p>
+          <span class="ext-badge">🌐 Google 实验</span>
+        </div>
+      </a>
+      <a class="ext-card animate-fadeInUp delay-5" href="https://semantris.withgoogle.com/" target="_blank" rel="noopener">
+        <div class="ext-thumb">📝</div>
+        <div class="ext-info">
+          <h3>Semantris</h3>
+          <p>AI 驱动的文字联想游戏，看谁更能理解语义！</p>
+          <span class="ext-badge">🌐 Google AI</span>
+        </div>
+      </a>
+    </div>
+  </div>
+
+  <script>
+    const groupId = localStorage.getItem('groupId');
+    if (!groupId) window.location.href = '/';
+    document.getElementById('groupBadge').textContent = `👥 第 ${groupId} 组`;
+  </script>
+</body>
+</html>

@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 挑战赛 - AI视频侦查员</title>
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    .game-content { max-width: 900px; margin: 0 auto; padding: 2rem 1rem; position: relative; z-index: 1; }
+    .question-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; margin-bottom: 2rem; }
+    .play-count-badge { padding: 0.5rem 1rem; background: rgba(251, 191, 36, 0.15); border: 1px solid rgba(251, 191, 36, 0.3); border-radius: var(--radius-xl); color: var(--neon-yellow); font-weight: 600; font-size: 0.9rem; }
+    .video-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; color: var(--text-secondary); font-size: 1.2rem; }
+    .video-wrapper { position: relative; }
+  </style>
+</head>
+<body>
+  <nav class="navbar">
+    <a href="/lobby.html" class="navbar-brand"><span class="logo-icon">🎬</span><span>AI 视频侦查员</span></a>
+    <div class="navbar-info">
+      <span class="group-badge" id="groupBadge">👥 第 - 组</span>
+      <span class="score-badge" id="scoreBadge">🏆 0 分</span>
+      <a href="/lobby.html" class="btn btn-ghost btn-sm">← 返回大厅</a>
+    </div>
+  </nav>
+
+  <div class="game-content">
+    <!-- Waiting state -->
+    <div id="waitingState" class="glass-card text-center" style="padding: 4rem 2rem;">
+      <div class="waiting-state">
+        <div class="spinner"></div>
+        <h2 style="margin-bottom: 0.5rem;">等待老师开始...</h2>
+        <p style="color: var(--text-secondary);">游戏即将开始，请耐心等待</p>
+      </div>
+    </div>
+
+    <!-- Game active state -->
+    <div id="gameActive" class="hidden">
+      <div class="question-header">
+        <h2 id="questionTitle">第 1 题</h2>
+        <div class="flex gap-2">
+          <span class="play-count-badge" id="playCountBadge">🎥 剩余播放: 2次</span>
+          <div class="timer" id="timer" style="display: none;">⏰ <span id="timerValue">60</span>s</div>
+        </div>
+      </div>
+
+      <!-- Video area -->
+      <div id="videoArea">
+        <div class="video-container video-wrapper">
+          <video id="videoPlayer" preload="auto"></video>
+        </div>
+        <div class="text-center mt-2">
+          <button class="btn btn-primary" id="playBtn" onclick="playVideo()">▶️ 播放视频</button>
+        </div>
+      </div>
+
+      <!-- Exhausted -->
+      <div id="exhaustedArea" class="hidden">
+        <div class="video-exhausted">
+          <p style="font-size: 3rem; margin-bottom: 1rem;">🚫</p>
+          <p style="font-size: 1.2rem;">播放次数已用完</p>
+          <p style="color: var(--text-muted);">请根据记忆做出判断</p>
+        </div>
+      </div>
+
+      <!-- Answer buttons -->
+      <div id="answerArea" class="hidden">
+        <h3 class="text-center mt-4 mb-3">这个视频是 AI 生成的吗？</h3>
+        <div class="answer-buttons">
+          <button class="btn btn-danger answer-btn" onclick="submitAnswer('ai')">🤖 AI 生成</button>
+          <button class="btn btn-success answer-btn" onclick="submitAnswer('real')">📹 真实视频</button>
+        </div>
+      </div>
+
+      <!-- Submitted state -->
+      <div id="submittedArea" class="hidden">
+        <div class="glass-card text-center mt-4">
+          <p style="font-size: 2rem; margin-bottom: 0.5rem;">✅</p>
+          <p style="font-size: 1.1rem;">答案已提交</p>
+          <p style="color: var(--text-secondary); margin-top: 0.5rem;" id="submittedAnswer"></p>
+        </div>
+      </div>
+
+      <!-- Waiting for next -->
+      <div id="waitNextArea" class="hidden">
+        <div class="glass-card text-center mt-4">
+          <div class="waiting-state">
+            <div class="spinner"></div>
+            <p>等待老师公布答案并开始下一题...</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Answer revealed -->
+      <div id="answerRevealArea" class="hidden">
+        <div class="result-banner" id="resultBanner"></div>
+      </div>
+    </div>
+
+    <!-- All done -->
+    <div id="doneState" class="hidden">
+      <div class="glass-card text-center" style="padding: 4rem 2rem;">
+        <p style="font-size: 4rem; margin-bottom: 1rem;">🎉</p>
+        <h2>所有视频题目已完成！</h2>
+        <p class="mt-2" style="color: var(--text-secondary);">你的最终得分：</p>
+        <p style="font-family: 'Orbitron'; font-size: 3rem; color: var(--neon-purple); font-weight: 900;" id="finalScore">0</p>
+        <a href="/lobby.html" class="btn btn-primary btn-lg mt-4">返回大厅</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const groupId = localStorage.getItem('groupId');
+    const token = localStorage.getItem('token');
+    if (!groupId || !token) window.location.href = '/';
+
+    const socket = io();
+    socket.emit('register-group', { groupId: parseInt(groupId), token });
+    document.getElementById('groupBadge').textContent = `👥 第 ${groupId} 组`;
+
+    let currentVideo = null;
+    let playCount = 0;
+    let timerInterval = null;
+    let hasPlayedOnce = false;
+    let hasCountedThisSession = false;
+
+    async function loadCurrentState() {
+      try {
+        const res = await fetch(`/api/game1/current/${groupId}`);
+        const data = await res.json();
+
+        if (!data.active) {
+          document.getElementById('waitingState').classList.remove('hidden');
+          document.getElementById('gameActive').classList.add('hidden');
+          document.getElementById('doneState').classList.add('hidden');
+          return;
+        }
+
+        if (data.waitingForNext) {
+          document.getElementById('waitingState').classList.remove('hidden');
+          document.querySelector('.waiting-state h2').textContent = '准备就绪';
+          document.querySelector('.waiting-state p').textContent = '等待老师下发第一题...';
+          document.getElementById('gameActive').classList.add('hidden');
+          document.getElementById('doneState').classList.add('hidden');
+          return;
+        } else {
+          document.querySelector('.waiting-state h2').textContent = '等待老师开始...';
+          document.querySelector('.waiting-state p').textContent = '游戏即将开始，请耐心等待';
+        }
+
+        if (data.noMore) {
+          document.getElementById('waitingState').classList.add('hidden');
+          document.getElementById('gameActive').classList.add('hidden');
+          document.getElementById('doneState').classList.remove('hidden');
+          loadScore();
+          return;
+        }
+
+        document.getElementById('waitingState').classList.add('hidden');
+        document.getElementById('doneState').classList.add('hidden');
+        document.getElementById('gameActive').classList.remove('hidden');
+
+        currentVideo = data.video;
+        playCount = data.playCount;
+
+        document.getElementById('questionTitle').textContent = `第 ${data.currentQuestion} 题`;
+        document.getElementById('playCountBadge').textContent = `🎥 剩余播放: ${2 - playCount}次`;
+
+        // Check if frontend play is allowed
+        const allowFrontend = currentVideo.allowFrontendPlay !== false;
+
+        if (!allowFrontend) {
+          // Backend-only play mode: hide video, show placeholder and answer buttons directly
+          document.getElementById('videoArea').classList.add('hidden');
+          document.getElementById('exhaustedArea').classList.remove('hidden');
+          document.getElementById('playCountBadge').textContent = '🎥 由老师统一播放';
+          // Show a friendly message instead of "播放次数已用完"
+        } else if (playCount >= 2) {
+          document.getElementById('videoArea').classList.add('hidden');
+          document.getElementById('exhaustedArea').classList.remove('hidden');
+          document.getElementById('exhaustedArea').innerHTML = `
+            <div class="video-exhausted">
+              <p style="font-size: 3rem; margin-bottom: 1rem;">🚫</p>
+              <p style="font-size: 1.2rem;">播放次数已用完</p>
+              <p style="color: var(--text-muted);">请根据记忆做出判断</p>
+            </div>
+          `;
+        } else {
+          document.getElementById('videoArea').classList.remove('hidden');
+          document.getElementById('exhaustedArea').classList.add('hidden');
+          document.getElementById('videoPlayer').src = `/videos/${currentVideo.filename}`;
+          
+          if (playCount < 2) {
+            document.getElementById('videoPlayer').setAttribute('controls', 'controls');
+            
+            document.getElementById('videoPlayer').onplay = async (e) => {
+              if (playCount >= 2) {
+                e.preventDefault();
+                document.getElementById('videoPlayer').pause();
+                alert('播放次数已用完');
+                return;
+              }
+              if (!hasCountedThisSession) {
+                hasCountedThisSession = true;
+                hasPlayedOnce = true;
+                try {
+                  const res = await fetch(`/api/game1/play/${groupId}/${currentVideo.id}`, { method: 'POST' });
+                  const data = await res.json();
+                  playCount = data.playCount;
+                  document.getElementById('playCountBadge').textContent = `🎥 剩余播放: ${2 - playCount}次`;
+                  if (playCount >= 2) {
+                    document.getElementById('playBtn').disabled = true;
+                    document.getElementById('playBtn').textContent = '播放次数已用完';
+                  }
+                } catch(err) {}
+              }
+            };
+            
+            document.getElementById('videoPlayer').onended = () => {
+              hasCountedThisSession = false;
+              document.getElementById('answerArea').classList.remove('hidden');
+              startTimer();
+              if (playCount >= 2) {
+                document.getElementById('videoArea').classList.add('hidden');
+                document.getElementById('exhaustedArea').classList.remove('hidden');
+                document.getElementById('exhaustedArea').innerHTML = `
+                  <div class="video-exhausted">
+                    <p style="font-size: 3rem; margin-bottom: 1rem;">🚫</p>
+                    <p style="font-size: 1.2rem;">播放次数已用完</p>
+                    <p style="color: var(--text-muted);">请根据记忆做出判断</p>
+                  </div>
+                `;
+              }
+            };
+
+            document.getElementById('playBtn').disabled = false;
+            document.getElementById('playBtn').textContent = '▶️ 播放视频';
+          } else {
+            document.getElementById('videoPlayer').removeAttribute('controls');
+            document.getElementById('playBtn').disabled = true;
+            document.getElementById('playBtn').textContent = '播放次数已用完';
+          }
+        }
+
+        // Ensure buttons are enabled initially
+        document.querySelectorAll('.answer-btn').forEach(b => b.disabled = false);
+
+        // Modify DOM based on state
+        if (data.submitted) {
+          document.getElementById('submittedArea').classList.remove('hidden');
+          const modText = data.isAnswerShown ? '' : ' (可修改)';
+          document.getElementById('submittedAnswer').textContent = 
+            `你的答案: ${data.submittedAnswer === 'ai' ? '🤖 AI生成' : '📹 真实视频'}${modText}`;
+        } else {
+          document.getElementById('submittedArea').classList.add('hidden');
+        }
+        
+        if (data.isAnswerShown) {
+          document.getElementById('answerArea').classList.add('hidden');
+          document.getElementById('waitNextArea').classList.add('hidden');
+          document.getElementById('answerRevealArea').classList.remove('hidden');
+          document.querySelectorAll('.answer-btn').forEach(b => b.disabled = true);
+          
+          const banner = document.getElementById('resultBanner');
+          if (!data.submitted) {
+            banner.className = 'result-banner wrong';
+            banner.textContent = `❌ 未作答 (0分)`;
+          } else if (data.isCorrect) {
+            banner.className = 'result-banner correct';
+            banner.textContent = `✅ 回答正确！+5分`;
+          } else {
+            banner.className = 'result-banner wrong';
+            banner.textContent = `❌ 回答错误`;
+          }
+        } else {
+          document.getElementById('answerRevealArea').classList.add('hidden');
+          
+          if (data.submitted) {
+            document.getElementById('answerArea').classList.remove('hidden');
+            document.getElementById('waitNextArea').classList.remove('hidden');
+          } else {
+            document.getElementById('waitNextArea').classList.add('hidden');
+            
+            // Show answer buttons: immediately if no frontend play, or after first play
+            if (!allowFrontend || playCount > 0 || hasPlayedOnce) {
+              document.getElementById('answerArea').classList.remove('hidden');
+            } else {
+              document.getElementById('answerArea').classList.add('hidden');
+            }
+          }
+        }
+
+        loadScore();
+      } catch (e) {
+        console.error('Load state error:', e);
+      }
+    }
+
+    async function playVideo() {
+      if (playCount >= 2) return;
+      const video = document.getElementById('videoPlayer');
+      video.play();
+    }
+
+    function startTimer() {
+      if (timerInterval) clearInterval(timerInterval);
+      let seconds = 60;
+      const timerEl = document.getElementById('timer');
+      const timerValue = document.getElementById('timerValue');
+      timerEl.style.display = 'inline-flex';
+      timerValue.textContent = seconds;
+
+      timerInterval = setInterval(() => {
+        seconds--;
+        timerValue.textContent = seconds;
+        if (seconds <= 10) timerEl.classList.add('timer-warning');
+        if (seconds <= 0) {
+          clearInterval(timerInterval);
+          // Auto submit - no answer
+        }
+      }, 1000);
+    }
+
+    async function submitAnswer(answer) {
+      if (!currentVideo) return;
+      
+      document.querySelectorAll('.answer-btn').forEach(b => b.disabled = true);
+      
+      try {
+        const res = await fetch(`/api/game1/submit/${groupId}/${currentVideo.id}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ answer })
+        });
+        const data = await res.json();
+        
+        if (timerInterval) clearInterval(timerInterval);
+        document.getElementById('timer').style.display = 'none';
+        
+        loadCurrentState();
+      } catch (e) {
+        console.error('Submit error:', e);
+        document.querySelectorAll('.answer-btn').forEach(b => b.disabled = false);
+      }
+    }
+
+    async function loadScore() {
+      const res = await fetch(`/api/game1/score/${groupId}`);
+      const data = await res.json();
+      document.getElementById('scoreBadge').textContent = `🏆 ${data.score} 分`;
+      document.getElementById('finalScore').textContent = data.score;
+    }
+
+    // Socket events
+    socket.on('game-state-update', ({ gameId }) => {
+      if (gameId === 'game1') loadCurrentState();
+    });
+    socket.on('next-question', ({ gameId }) => {
+      if (gameId === 'game1') {
+        hasPlayedOnce = false;
+        loadCurrentState();
+      }
+    });
+    socket.on('show-answer', ({ gameId }) => {
+      if (gameId === 'game1') loadCurrentState();
+    });
+    socket.on('game-reset', ({ gameId }) => {
+      if (gameId === 'game1') loadCurrentState();
+    });
+    socket.on('force-logout', () => {
+      localStorage.clear();
+      window.location.href = '/';
+    });
+
+    loadCurrentState();
+  </script>
+</body>
+</html>

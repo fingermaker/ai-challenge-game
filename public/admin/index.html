@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 挑战赛 - 教师后台</title>
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    .login-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; z-index: 1; position: relative; }
+    .login-card { width: 100%; max-width: 400px; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="login-page">
+    <div class="login-card glass-card animate-scaleIn">
+      <div style="font-size: 3.5rem; margin-bottom: 1rem;">🎓</div>
+      <h1 class="gradient-text" style="font-size: 1.75rem; margin-bottom: 0.5rem;">教师控制后台</h1>
+      <p style="color: var(--text-secondary); margin-bottom: 2rem;">AI 挑战赛管理系统</p>
+      <div class="input-group">
+        <label>管理密码</label>
+        <input type="password" class="input" id="passwordInput" placeholder="请输入管理密码" onkeypress="if(event.key==='Enter')login()">
+      </div>
+      <button class="btn btn-primary btn-lg" style="width: 100%;" onclick="login()">🔐 登录后台</button>
+      <p id="errorMsg" style="color: #ef4444; margin-top: 1rem; display: none;"></p>
+    </div>
+  </div>
+  <script>
+    if (localStorage.getItem('adminPassword')) {
+      window.location.href = '/admin/dashboard.html';
+    }
+    async function login() {
+      const pw = document.getElementById('passwordInput').value;
+      try {
+        const res = await fetch('/api/admin/config', { headers: { 'x-admin-password': pw } });
+        if (res.ok) {
+          localStorage.setItem('adminPassword', pw);
+          window.location.href = '/admin/dashboard.html';
+        } else {
+          document.getElementById('errorMsg').textContent = '密码错误';
+          document.getElementById('errorMsg').style.display = 'block';
+        }
+      } catch(e) {
+        document.getElementById('errorMsg').textContent = '连接失败';
+        document.getElementById('errorMsg').style.display = 'block';
+      }
+    }
+  </script>
+</body>
+</html>

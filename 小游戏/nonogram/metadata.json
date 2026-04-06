@@ -1,0 +1,5 @@
+{
+  "name": "Nonogram",
+  "description": "Fill cells to reveal a hidden image. Numbers show the size and order of solid blocks (e.g., 3 1 = a block of 3, then 1). Blocks must have at least one gap between them. Use X to mark guaranteed empty spaces.",
+  "requestFramePermissions": []
+}

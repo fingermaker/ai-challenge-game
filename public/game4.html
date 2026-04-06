@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 挑战赛 - 线稿变大片</title>
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    .game-content { max-width: 1100px; margin: 0 auto; padding: 2rem 1rem; position: relative; z-index: 1; }
+    .sketch-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem; align-items: stretch; }
+    @media (max-width: 768px) { .sketch-layout { grid-template-columns: 1fr; } }
+    .canvas-panel, .result-panel {
+      background: var(--bg-card); border: var(--border-glass);
+      border-radius: var(--radius-lg); overflow: hidden;
+      display: flex; flex-direction: column;
+    }
+    .result-panel {
+      min-height: 480px;
+    }
+    .panel-header {
+      padding: 1rem 1.5rem; border-bottom: var(--border-glass);
+      font-family: 'Orbitron', sans-serif; font-weight: 700;
+      display: flex; align-items: center; gap: 0.5rem;
+    }
+    .canvas-wrapper { background: white; flex: 1; }
+    .canvas-wrapper canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+    .tool-bar {
+      display: flex; gap: 0.5rem; padding: 0.75rem 1rem;
+      background: var(--bg-secondary); flex-wrap: wrap; align-items: center;
+    }
+    .tool-btn {
+      padding: 0.4rem 0.8rem; border: 1px solid rgba(255,255,255,0.15);
+      border-radius: var(--radius-sm); background: var(--bg-glass);
+      color: var(--text-primary); cursor: pointer; font-size: 0.85rem;
+      transition: var(--transition);
+    }
+    .tool-btn:hover { border-color: var(--neon-blue); background: rgba(0,212,255,0.15); }
+    .result-placeholder {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      color: var(--text-muted); font-size: 1.1rem; padding: 2rem;
+      flex-direction: column; gap: 1rem;
+    }
+    .result-image { width: 100%; display: block; flex: 1; object-fit: contain; background: #111; }
+    .score-display {
+      padding: 1.5rem; text-align: center; border-top: var(--border-glass);
+    }
+    .score-number {
+      font-family: 'Orbitron', sans-serif; font-size: 3rem; font-weight: 900;
+      color: var(--neon-purple);
+    }
+    .attempts-info {
+      display: flex; gap: 0.75rem; justify-content: center; margin: 1.5rem 0;
+    }
+    .attempt-dot {
+      width: 40px; height: 40px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 0.9rem;
+    }
+    .attempt-dot.used { background: rgba(168, 85, 247, 0.3); color: var(--neon-purple); border: 2px solid var(--neon-purple); }
+    .attempt-dot.available { background: var(--bg-glass); color: var(--text-muted); border: 2px solid rgba(255,255,255,0.15); }
+    .generating-overlay {
+      position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(10, 14, 26, 0.9); display: flex;
+      align-items: center; justify-content: center; flex-direction: column;
+      gap: 1rem; z-index: 10; border-radius: var(--radius-lg);
+    }
+    .generating-spinner {
+      width: 60px; height: 60px; border: 4px solid rgba(168, 85, 247, 0.2);
+      border-top-color: var(--neon-purple); border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    .history-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-top: 2rem; }
+    .history-item { background: var(--bg-card); border: var(--border-glass); border-radius: var(--radius-md); overflow: hidden; }
+    .history-item img { width: 100%; display: block; }
+    .history-score { padding: 0.5rem; text-align: center; font-weight: 700; color: var(--neon-purple); font-family: 'Orbitron'; }
+  </style>
+</head>
+<body>
+  <nav class="navbar">
+    <a href="/lobby.html" class="navbar-brand"><span class="logo-icon">✏️</span><span>线稿变大片</span></a>
+    <div class="navbar-info">
+      <span class="group-badge" id="groupBadge">👥 第 - 组</span>
+      <span class="score-badge" id="scoreBadge">🏆 0 分</span>
+      <a href="/lobby.html" class="btn btn-ghost btn-sm">← 返回大厅</a>
+    </div>
+  </nav>
+
+  <div class="game-content">
+    <div id="waitingState" class="glass-card text-center hidden" style="padding: 4rem 2rem;">
+      <div class="waiting-state">
+        <div class="spinner"></div>
+        <h2>等待老师开始...</h2>
+      </div>
+    </div>
+
+    <div id="gameActive">
+      <div class="flex-between mb-3" style="flex-wrap: wrap; gap: 1rem;">
+        <h2>✏️ 手绘线稿，AI 生成大片</h2>
+      </div>
+
+      <div class="attempts-info">
+        <div class="attempt-dot" id="attempt1">1</div>
+        <div class="attempt-dot" id="attempt2">2</div>
+        <div class="attempt-dot" id="attempt3">3</div>
+      </div>
+
+      <div class="sketch-layout">
+        <!-- Left: Canvas -->
+        <div class="canvas-panel">
+          <div class="panel-header">✏️ 草图画板</div>
+          <div class="canvas-wrapper">
+            <canvas id="sketchCanvas" width="500" height="400"></canvas>
+          </div>
+          <div class="tool-bar">
+            <button class="tool-btn" onclick="undoSketch()">↩️ 撤销</button>
+            <button class="tool-btn" onclick="clearSketch()">🗑️ 清除</button>
+            <input type="range" min="2" max="15" value="3" id="sketchBrushSize" title="笔刷大小" style="width: 80px;">
+            <div style="flex: 1;"></div>
+            <button class="btn btn-primary" onclick="generateImage()" id="generateBtn">🎨 AI 生成大片</button>
+          </div>
+        </div>
+
+        <!-- Right: Result -->
+        <div class="result-panel" style="position: relative;">
+          <div class="panel-header">🖼️ AI 生成结果</div>
+          <div id="resultPlaceholder" class="result-placeholder">
+            <span style="font-size: 3rem;">🖼️</span>
+            <span>未生成照片。</span>
+            <span style="font-size: 0.85rem;">在左侧画出你的创意线稿，然后点击"AI生成大片"</span>
+          </div>
+          <img id="resultImage" class="result-image hidden" src="" alt="AI Generated">
+          <div class="score-display hidden" id="scoreDisplay">
+            <div style="color: var(--text-secondary); margin-bottom: 0.5rem;">创意评分</div>
+            <div class="score-number" id="currentAttemptScore">-</div>
+          </div>
+          <!-- Generating overlay -->
+          <div class="generating-overlay hidden" id="generatingOverlay">
+            <div class="generating-spinner"></div>
+            <p style="font-size: 1.1rem;">AI 正在生成大片...</p>
+            <p style="color: var(--text-muted); font-size: 0.85rem;">请耐心等待</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- History -->
+      <div id="historySection" class="hidden">
+        <h3 class="mt-4 mb-2">📜 历史记录</h3>
+        <div class="history-grid" id="historyGrid"></div>
+      </div>
+
+      <div class="glass-card text-center mt-4">
+        <p style="color: var(--text-secondary);">当前总分</p>
+        <p style="font-family: 'Orbitron'; font-size: 2.5rem; color: var(--neon-purple); font-weight: 900;" id="totalScore">0</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const groupId = localStorage.getItem('groupId');
+    const token = localStorage.getItem('token');
+    if (!groupId || !token) window.location.href = '/';
+
+    const socket = io();
+    socket.emit('register-group', { groupId: parseInt(groupId), token });
+    document.getElementById('groupBadge').textContent = `👥 第 ${groupId} 组`;
+
+    // Canvas
+    const canvas = document.getElementById('sketchCanvas');
+    const ctx = canvas.getContext('2d');
+    let drawing = false;
+    let history = [];
+    let currentPath = [];
+
+    function initCanvas() {
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      ctx.scale(dpr, dpr);
+      canvas.style.width = rect.width + 'px';
+      canvas.style.height = rect.height + 'px';
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, rect.width, rect.height);
+    }
+
+    function redraw() {
+      const rect = canvas.getBoundingClientRect();
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, rect.width, rect.height);
+      history.forEach(stroke => {
+        if (stroke.length < 2) return;
+        ctx.beginPath();
+        ctx.strokeStyle = '#000000';
+        ctx.lineWidth = stroke[0].size;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.moveTo(stroke[0].x, stroke[0].y);
+        for (let i = 1; i < stroke.length; i++) {
+          ctx.lineTo(stroke[i].x, stroke[i].y);
+        }
+        ctx.stroke();
+      });
+    }
+
+    canvas.addEventListener('mousedown', e => { startD(e); });
+    canvas.addEventListener('mousemove', e => { doD(e); });
+    canvas.addEventListener('mouseup', stopD);
+    canvas.addEventListener('mouseleave', stopD);
+    canvas.addEventListener('touchstart', e => { e.preventDefault(); startD(e.touches[0]); });
+    canvas.addEventListener('touchmove', e => { e.preventDefault(); doD(e.touches[0]); });
+    canvas.addEventListener('touchend', stopD);
+
+    function getP(e) {
+      const r = canvas.getBoundingClientRect();
+      return { x: e.clientX - r.left, y: e.clientY - r.top };
+    }
+
+    function startD(e) {
+      drawing = true;
+      const p = getP(e);
+      const size = parseInt(document.getElementById('sketchBrushSize').value);
+      currentPath = [{ x: p.x, y: p.y, size }];
+      ctx.beginPath();
+      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = size;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.moveTo(p.x, p.y);
+    }
+
+    function doD(e) {
+      if (!drawing) return;
+      const p = getP(e);
+      const size = parseInt(document.getElementById('sketchBrushSize').value);
+      currentPath.push({ x: p.x, y: p.y, size });
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+    }
+
+    function stopD() {
+      if (drawing && currentPath.length > 0) {
+        history.push([...currentPath]);
+      }
+      drawing = false;
+      currentPath = [];
+    }
+
+    function undoSketch() { history.pop(); redraw(); }
+    function clearSketch() { history = []; redraw(); }
+
+    let attemptsUsed = 0;
+
+    async function loadState() {
+      try {
+        const res = await fetch(`/api/game4/state/${groupId}`);
+        const data = await res.json();
+        attemptsUsed = data.attemptsUsed;
+        updateAttempts();
+        document.getElementById('totalScore').textContent = data.totalScore;
+        document.getElementById('scoreBadge').textContent = `🏆 ${data.totalScore} 分`;
+
+        if (data.submissions.length > 0) {
+          document.getElementById('historySection').classList.remove('hidden');
+          const grid = document.getElementById('historyGrid');
+          grid.innerHTML = '';
+          data.submissions.forEach(s => {
+            const div = document.createElement('div');
+            div.className = 'history-item';
+            div.innerHTML = `
+              <img src="/uploads/${s.sketch_path}" alt="Sketch">
+              <div class="history-score">创意: ${s.score}分</div>
+            `;
+            grid.appendChild(div);
+          });
+        }
+
+        if (attemptsUsed >= 3) {
+          document.getElementById('generateBtn').disabled = true;
+          document.getElementById('generateBtn').textContent = '机会已用完';
+        }
+      } catch (e) {
+        console.error('Error:', e);
+      }
+    }
+
+    function updateAttempts() {
+      for (let i = 1; i <= 3; i++) {
+        const dot = document.getElementById(`attempt${i}`);
+        if (i <= attemptsUsed) {
+          dot.className = 'attempt-dot used';
+        } else {
+          dot.className = 'attempt-dot available';
+        }
+      }
+    }
+
+    // Compress image to max 1024x768 JPEG
+    function compressImage(sourceCanvas, maxW, maxH, quality) {
+      const sw = sourceCanvas.width, sh = sourceCanvas.height;
+      // Use logical size if available
+      const rect = sourceCanvas.getBoundingClientRect();
+      const logicW = rect.width, logicH = rect.height;
+      let targetW = logicW, targetH = logicH;
+      if (targetW > maxW) { targetH = targetH * maxW / targetW; targetW = maxW; }
+      if (targetH > maxH) { targetW = targetW * maxH / targetH; targetH = maxH; }
+      targetW = Math.round(targetW);
+      targetH = Math.round(targetH);
+      const tmpCanvas = document.createElement('canvas');
+      tmpCanvas.width = targetW;
+      tmpCanvas.height = targetH;
+      const tmpCtx = tmpCanvas.getContext('2d');
+      tmpCtx.drawImage(sourceCanvas, 0, 0, targetW, targetH);
+      return tmpCanvas.toDataURL('image/jpeg', quality || 0.8);
+    }
+
+    async function generateImage() {
+      if (attemptsUsed >= 3) return;
+
+      const btn = document.getElementById('generateBtn');
+      btn.disabled = true;
+      document.getElementById('generatingOverlay').classList.remove('hidden');
+      document.getElementById('resultPlaceholder').classList.add('hidden');
+
+      const imageData = compressImage(canvas, 1024, 768, 0.8);
+
+      try {
+        const res = await fetch(`/api/game4/generate/${groupId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ imageData })
+        });
+        const data = await res.json();
+
+        document.getElementById('generatingOverlay').classList.add('hidden');
+
+        if (data.success) {
+          if (data.generatedImage) {
+            document.getElementById('resultImage').src = data.generatedImage;
+            document.getElementById('resultImage').classList.remove('hidden');
+          } else {
+            document.getElementById('resultPlaceholder').classList.remove('hidden');
+            document.getElementById('resultPlaceholder').innerHTML = '<span style="font-size:3rem">⚠️</span><span>AI未能生成图片，但已评分</span>';
+          }
+          document.getElementById('scoreDisplay').classList.remove('hidden');
+          document.getElementById('currentAttemptScore').textContent = data.score;
+
+          loadState();
+        } else {
+          alert(data.error || 'AI生成失败');
+          document.getElementById('resultPlaceholder').classList.remove('hidden');
+        }
+      } catch (e) {
+        console.error('Error:', e);
+        document.getElementById('generatingOverlay').classList.add('hidden');
+        document.getElementById('resultPlaceholder').classList.remove('hidden');
+        alert('生成失败，请重试');
+      }
+
+      btn.disabled = attemptsUsed >= 3;
+      if (attemptsUsed < 3) btn.textContent = '🎨 AI 生成大片';
+    }
+
+    socket.on('force-logout', () => { localStorage.clear(); window.location.href = '/'; });
+
+    setTimeout(initCanvas, 100);
+    window.addEventListener('resize', initCanvas);
+    loadState();
+  </script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+node_modules/
+server/data/game.db
+server/data/uploads/*
+server/data/videos/*
+!server/data/uploads/.gitkeep
+!server/data/videos/.gitkeep
+.env
+
+# Temp files
+*.log
+api_test.json
+api_response_debug.json
+gemini_models.txt
+*.zip
+1.png

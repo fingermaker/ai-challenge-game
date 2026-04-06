@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 挑战赛 - 人脸真假大比拼</title>
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    .game-content { max-width: 900px; margin: 0 auto; padding: 2rem 1rem; position: relative; z-index: 1; }
+    .face-option { position: relative; }
+    .face-option .face-overlay {
+      position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 4rem; opacity: 0; transition: var(--transition);
+      border-radius: var(--radius-lg);
+    }
+    .face-option.correct-reveal .face-overlay {
+      opacity: 1; background: rgba(34, 197, 94, 0.3);
+    }
+    .face-option.wrong-reveal .face-overlay {
+      opacity: 1; background: rgba(239, 68, 68, 0.3);
+    }
+    .vs-text {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 2rem;
+      font-weight: 900;
+      color: var(--neon-orange);
+      text-align: center;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .face-pair-wrapper {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 1.5rem;
+      align-items: center;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+    @media (max-width: 768px) {
+      .face-pair-wrapper { grid-template-columns: 1fr; }
+      .vs-text { margin: 0.5rem 0; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="navbar">
+    <a href="/lobby.html" class="navbar-brand"><span class="logo-icon">👤</span><span>人脸真假大比拼</span></a>
+    <div class="navbar-info">
+      <span class="group-badge" id="groupBadge">👥 第 - 组</span>
+      <span class="score-badge" id="scoreBadge">🏆 0 分</span>
+      <a href="/lobby.html" class="btn btn-ghost btn-sm">← 返回大厅</a>
+    </div>
+  </nav>
+
+  <div class="game-content">
+    <div id="waitingState" class="glass-card text-center" style="padding: 4rem 2rem;">
+      <div class="waiting-state">
+        <div class="spinner"></div>
+        <h2>等待老师开始...</h2>
+        <p style="color: var(--text-secondary);">游戏即将开始，请耐心等待</p>
+      </div>
+    </div>
+
+    <div id="gameActive" class="hidden">
+      <div class="flex-between mb-3" style="flex-wrap: wrap; gap: 1rem;">
+        <h2 id="questionTitle">第 1 题</h2>
+        <div class="flex gap-2">
+          <div class="timer" id="timer" style="display: none;">⏰ <span id="timerValue">60</span>s</div>
+        </div>
+      </div>
+
+      <h3 class="text-center mb-3" style="color: var(--text-secondary);">👆 点击你认为是<span style="color: var(--neon-green);">真人</span>的那张脸</h3>
+
+      <div class="face-pair-wrapper" id="facePair">
+        <div class="face-option glass-card" id="faceLeft" onclick="selectFace('left')" style="padding: 0; cursor: pointer;">
+          <img id="faceLeftImg" src="" alt="Face A">
+          <div class="face-label">A</div>
+          <div class="face-overlay" id="faceLeftOverlay"></div>
+        </div>
+        <div class="vs-text">VS</div>
+        <div class="face-option glass-card" id="faceRight" onclick="selectFace('right')" style="padding: 0; cursor: pointer;">
+          <img id="faceRightImg" src="" alt="Face B">
+          <div class="face-label">B</div>
+          <div class="face-overlay" id="faceRightOverlay"></div>
+        </div>
+      </div>
+
+      <div class="text-center mt-4">
+        <button class="btn btn-primary btn-lg" id="submitBtn" onclick="submitFaceAnswer()" disabled>确认选择</button>
+      </div>
+
+      <div id="submittedArea" class="hidden">
+        <div class="glass-card text-center mt-4">
+          <p style="font-size: 2rem;">✅</p>
+          <p>答案已提交，等待老师公布答案...</p>
+        </div>
+      </div>
+
+      <div id="resultArea" class="hidden">
+        <div class="result-banner" id="resultBanner"></div>
+      </div>
+    </div>
+
+    <div id="doneState" class="hidden">
+      <div class="glass-card text-center" style="padding: 4rem 2rem;">
+        <p style="font-size: 4rem;">🎉</p>
+        <h2>所有题目已完成！</h2>
+        <p style="font-family: 'Orbitron'; font-size: 3rem; color: var(--neon-purple); font-weight: 900; margin-top: 1rem;" id="finalScore">0</p>
+        <a href="/lobby.html" class="btn btn-primary btn-lg mt-4">返回大厅</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const groupId = localStorage.getItem('groupId');
+    const token = localStorage.getItem('token');
+    if (!groupId || !token) window.location.href = '/';
+
+    const socket = io();
+    socket.emit('register-group', { groupId: parseInt(groupId), token });
+    document.getElementById('groupBadge').textContent = `👥 第 ${groupId} 组`;
+
+    let currentFace = null;
+    let selectedSide = null;
+    let timerInterval = null;
+
+    async function loadCurrentState() {
+      try {
+        const res = await fetch(`/api/game2/current/${groupId}`);
+        const data = await res.json();
+
+        if (!data.active) {
+          document.getElementById('waitingState').classList.remove('hidden');
+          document.getElementById('gameActive').classList.add('hidden');
+          document.getElementById('doneState').classList.add('hidden');
+          return;
+        }
+        if (data.noMore) {
+          document.getElementById('waitingState').classList.add('hidden');
+          document.getElementById('gameActive').classList.add('hidden');
+          document.getElementById('doneState').classList.remove('hidden');
+          loadScore();
+          return;
+        }
+
+        document.getElementById('waitingState').classList.add('hidden');
+        document.getElementById('doneState').classList.add('hidden');
+        document.getElementById('gameActive').classList.remove('hidden');
+
+        currentFace = data.face;
+        document.getElementById('questionTitle').textContent = `第 ${data.currentQuestion} 题`;
+
+        // Place faces based on sortOrder: even=real on left, odd=real on right
+        // This matches the real_position stored in the database
+        if (currentFace.realImage && currentFace.fakeImage) {
+          if (currentFace.sortOrder % 2 !== 0) {
+            // odd sortOrder: real on left
+            document.getElementById('faceLeftImg').src = `/faces/real/${currentFace.realImage}`;
+            document.getElementById('faceRightImg').src = `/faces/fake/${currentFace.fakeImage}`;
+          } else {
+            // even sortOrder: real on right
+            document.getElementById('faceLeftImg').src = `/faces/fake/${currentFace.fakeImage}`;
+            document.getElementById('faceRightImg').src = `/faces/real/${currentFace.realImage}`;
+          }
+        }
+
+        // Reset selection
+        selectedSide = null;
+        document.getElementById('faceLeft').classList.remove('selected', 'correct-reveal', 'wrong-reveal');
+        document.getElementById('faceRight').classList.remove('selected', 'correct-reveal', 'wrong-reveal');
+        document.getElementById('faceLeftOverlay').textContent = '';
+        document.getElementById('faceRightOverlay').textContent = '';
+
+        if (data.submitted) {
+          document.getElementById('submitBtn').classList.add('hidden');
+          document.getElementById('facePair').style.pointerEvents = 'none';
+          
+          if (data.isAnswerShown) {
+            document.getElementById('submittedArea').classList.add('hidden');
+            document.getElementById('resultArea').classList.remove('hidden');
+            const banner = document.getElementById('resultBanner');
+            if (data.isCorrect) {
+              banner.className = 'result-banner correct';
+              banner.textContent = '✅ 回答正确！+5分';
+            } else {
+              banner.className = 'result-banner wrong';
+              banner.textContent = '❌ 回答错误';
+            }
+            // Show which is real
+            showFaceReveal(data.face.realPosition);
+          } else {
+            document.getElementById('submittedArea').classList.remove('hidden');
+            document.getElementById('resultArea').classList.add('hidden');
+          }
+        } else {
+          document.getElementById('submitBtn').classList.remove('hidden');
+          document.getElementById('submitBtn').disabled = true;
+          document.getElementById('facePair').style.pointerEvents = 'auto';
+          document.getElementById('submittedArea').classList.add('hidden');
+          document.getElementById('resultArea').classList.add('hidden');
+          startTimer();
+        }
+
+        loadScore();
+      } catch (e) {
+        console.error('Error:', e);
+      }
+    }
+
+    function selectFace(side) {
+      selectedSide = side;
+      document.getElementById('faceLeft').classList.toggle('selected', side === 'left');
+      document.getElementById('faceRight').classList.toggle('selected', side === 'right');
+      document.getElementById('submitBtn').disabled = false;
+    }
+
+    async function submitFaceAnswer() {
+      if (!selectedSide || !currentFace) return;
+      document.getElementById('submitBtn').disabled = true;
+
+      try {
+        await fetch(`/api/game2/submit/${groupId}/${currentFace.id}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ answer: selectedSide })
+        });
+        if (timerInterval) clearInterval(timerInterval);
+        loadCurrentState();
+      } catch(e) {
+        document.getElementById('submitBtn').disabled = false;
+      }
+    }
+
+    function showFaceReveal(realPosition) {
+      const leftOverlay = document.getElementById('faceLeftOverlay');
+      const rightOverlay = document.getElementById('faceRightOverlay');
+      const leftFace = document.getElementById('faceLeft');
+      const rightFace = document.getElementById('faceRight');
+
+      if (realPosition === 'left') {
+        leftFace.classList.add('correct-reveal');
+        leftOverlay.textContent = '✅ 真人';
+        rightFace.classList.add('wrong-reveal');
+        rightOverlay.textContent = '🤖 AI';
+      } else {
+        rightFace.classList.add('correct-reveal');
+        rightOverlay.textContent = '✅ 真人';
+        leftFace.classList.add('wrong-reveal');
+        leftOverlay.textContent = '🤖 AI';
+      }
+    }
+
+    function startTimer() {
+      if (timerInterval) clearInterval(timerInterval);
+      let seconds = 60;
+      const timerEl = document.getElementById('timer');
+      const timerValue = document.getElementById('timerValue');
+      timerEl.style.display = 'inline-flex';
+      timerValue.textContent = seconds;
+
+      timerInterval = setInterval(() => {
+        seconds--;
+        timerValue.textContent = seconds;
+        if (seconds <= 10) timerEl.classList.add('timer-warning');
+        if (seconds <= 0) clearInterval(timerInterval);
+      }, 1000);
+    }
+
+    async function loadScore() {
+      const res = await fetch(`/api/game2/score/${groupId}`);
+      const data = await res.json();
+      document.getElementById('scoreBadge').textContent = `🏆 ${data.score} 分`;
+      document.getElementById('finalScore').textContent = data.score;
+    }
+
+    socket.on('game-state-update', ({ gameId }) => { if (gameId === 'game2') loadCurrentState(); });
+    socket.on('next-question', ({ gameId }) => { if (gameId === 'game2') loadCurrentState(); });
+    socket.on('show-answer', ({ gameId }) => { if (gameId === 'game2') loadCurrentState(); });
+    socket.on('game-reset', ({ gameId }) => { if (gameId === 'game2') loadCurrentState(); });
+    socket.on('force-logout', () => { localStorage.clear(); window.location.href = '/'; });
+
+    loadCurrentState();
+  </script>
+</body>
+</html>

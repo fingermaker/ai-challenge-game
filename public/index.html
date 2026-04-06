@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="AI挑战赛 - 学生AI竞赛互动平台">
+  <title>AI 挑战赛 - 登录</title>
+  <link rel="stylesheet" href="/css/main.css">
+  <style>
+    .login-page {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      z-index: 1;
+    }
+
+    .login-card {
+      width: 100%;
+      max-width: 440px;
+      text-align: center;
+    }
+
+    .login-logo {
+      font-size: 4rem;
+      margin-bottom: 1rem;
+      animation: float 3s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
+
+    .login-title {
+      font-family: 'Orbitron', sans-serif;
+      font-size: 2rem;
+      font-weight: 800;
+      margin-bottom: 0.5rem;
+    }
+
+    .login-subtitle {
+      color: var(--text-secondary);
+      margin-bottom: 2.5rem;
+      font-size: 1rem;
+    }
+
+    .group-select-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 0.75rem;
+      margin-bottom: 2rem;
+    }
+
+    .group-btn {
+      aspect-ratio: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 2px solid rgba(255, 255, 255, 0.1);
+      border-radius: var(--radius-md);
+      background: var(--bg-glass);
+      color: var(--text-primary);
+      font-family: 'Orbitron', sans-serif;
+      font-size: 1.25rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+
+    .group-btn:hover {
+      border-color: var(--neon-blue);
+      background: rgba(0, 212, 255, 0.1);
+      transform: scale(1.08);
+      box-shadow: var(--glow-blue);
+    }
+
+    .group-btn.selected {
+      border-color: var(--neon-blue);
+      background: rgba(0, 212, 255, 0.2);
+      box-shadow: var(--glow-blue);
+      transform: scale(1.05);
+    }
+
+    .group-btn.online {
+      border-color: rgba(239, 68, 68, 0.5);
+      background: rgba(239, 68, 68, 0.1);
+    }
+
+    .group-btn.online::after {
+      content: '';
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      width: 8px;
+      height: 8px;
+      background: #ef4444;
+      border-radius: 50%;
+    }
+
+    .group-btn {
+      position: relative;
+    }
+
+    .login-enter-btn {
+      width: 100%;
+      margin-top: 1rem;
+    }
+
+    .particles {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 0;
+      overflow: hidden;
+    }
+
+    .particle {
+      position: absolute;
+      width: 3px;
+      height: 3px;
+      background: var(--neon-blue);
+      border-radius: 50%;
+      opacity: 0;
+      animation: particle-float linear infinite;
+    }
+
+    @keyframes particle-float {
+      0% { opacity: 0; transform: translateY(100vh) scale(0); }
+      10% { opacity: 0.6; }
+      90% { opacity: 0.2; }
+      100% { opacity: 0; transform: translateY(-10vh) scale(1); }
+    }
+  </style>
+</head>
+<body>
+  <!-- Particle background -->
+  <div class="particles" id="particles"></div>
+
+  <div class="login-page">
+    <div class="login-card glass-card glass-card--no-hover animate-scaleIn">
+      <div class="login-logo">🤖</div>
+      <h1 class="login-title gradient-text">AI 挑战赛</h1>
+      <p class="login-subtitle">选择你的组号加入比赛</p>
+
+      <div class="group-select-grid" id="groupGrid">
+        <!-- Generated dynamically -->
+      </div>
+
+      <button class="btn btn-primary btn-lg login-enter-btn" id="loginBtn" disabled>
+        🚀 进入比赛
+      </button>
+
+      <p id="loginError" style="color: #ef4444; margin-top: 1rem; display: none;"></p>
+    </div>
+  </div>
+
+  <!-- Conflict Modal -->
+  <div class="modal-overlay" id="conflictModal">
+    <div class="modal">
+      <h3 style="margin-bottom: 1rem; color: var(--neon-orange);">⚠️ 设备冲突</h3>
+      <p style="color: var(--text-secondary); margin-bottom: 2rem;">
+        该组号已有其他设备登录。是否强制登录？（原设备将被踢下线）
+      </p>
+      <div class="flex gap-2" style="justify-content: flex-end;">
+        <button class="btn btn-ghost" onclick="closeConflictModal()">取消</button>
+        <button class="btn btn-danger" onclick="forceLogin()">强制登录</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    let selectedGroup = null;
+    let groupCount = 10;
+    const socket = io();
+
+    // Check if already logged in
+    const savedGroup = localStorage.getItem('groupId');
+    const savedToken = localStorage.getItem('token');
+    if (savedGroup && savedToken) {
+      fetch('/api/auth/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ groupId: parseInt(savedGroup), token: savedToken })
+      })
+      .then(r => r.json())
+      .then(data => {
+        if (data.valid) {
+          window.location.href = '/lobby.html';
+        } else {
+          localStorage.removeItem('groupId');
+          localStorage.removeItem('token');
+        }
+      });
+    }
+
+    // Load group count and online status
+    async function loadGroups() {
+      const res = await fetch('/api/auth/group-count');
+      const data = await res.json();
+      groupCount = data.count;
+
+      const grid = document.getElementById('groupGrid');
+      grid.innerHTML = '';
+      // Adjust columns based on count
+      if (groupCount > 15) grid.style.gridTemplateColumns = 'repeat(5, 1fr)';
+      else if (groupCount > 10) grid.style.gridTemplateColumns = 'repeat(5, 1fr)';
+      else if (groupCount > 5) grid.style.gridTemplateColumns = 'repeat(5, 1fr)';
+      else grid.style.gridTemplateColumns = `repeat(${groupCount}, 1fr)`;
+
+      for (let i = 1; i <= groupCount; i++) {
+        const btn = document.createElement('button');
+        btn.className = 'group-btn';
+        btn.textContent = i;
+        btn.dataset.group = i;
+        btn.onclick = () => selectGroup(i);
+        grid.appendChild(btn);
+      }
+    }
+
+    function selectGroup(id) {
+      selectedGroup = id;
+      document.querySelectorAll('.group-btn').forEach(b => b.classList.remove('selected'));
+      document.querySelector(`[data-group="${id}"]`).classList.add('selected');
+      document.getElementById('loginBtn').disabled = false;
+    }
+
+    document.getElementById('loginBtn').addEventListener('click', async () => {
+      if (!selectedGroup) return;
+      
+      const btn = document.getElementById('loginBtn');
+      btn.disabled = true;
+      btn.textContent = '⏳ 登录中...';
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ groupId: selectedGroup })
+        });
+        const data = await res.json();
+
+        if (data.conflict) {
+          document.getElementById('conflictModal').classList.add('active');
+          btn.disabled = false;
+          btn.textContent = '🚀 进入比赛';
+          return;
+        }
+
+        if (data.success) {
+          localStorage.setItem('groupId', selectedGroup);
+          localStorage.setItem('token', data.token);
+          window.location.href = '/lobby.html';
+        } else {
+          showError(data.error);
+          btn.disabled = false;
+          btn.textContent = '🚀 进入比赛';
+        }
+      } catch (e) {
+        showError('连接失败，请重试');
+        btn.disabled = false;
+        btn.textContent = '🚀 进入比赛';
+      }
+    });
+
+    async function forceLogin() {
+      try {
+        const res = await fetch('/api/auth/force-login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ groupId: selectedGroup })
+        });
+        const data = await res.json();
+        if (data.success) {
+          localStorage.setItem('groupId', selectedGroup);
+          localStorage.setItem('token', data.token);
+          window.location.href = '/lobby.html';
+        }
+      } catch (e) {
+        showError('强制登录失败');
+      }
+      closeConflictModal();
+    }
+
+    function closeConflictModal() {
+      document.getElementById('conflictModal').classList.remove('active');
+    }
+
+    function showError(msg) {
+      const el = document.getElementById('loginError');
+      el.textContent = msg;
+      el.style.display = 'block';
+      setTimeout(() => el.style.display = 'none', 3000);
+    }
+
+    // Create particles
+    function createParticles() {
+      const container = document.getElementById('particles');
+      for (let i = 0; i < 30; i++) {
+        const p = document.createElement('div');
+        p.className = 'particle';
+        p.style.left = Math.random() * 100 + '%';
+        p.style.animationDuration = (5 + Math.random() * 10) + 's';
+        p.style.animationDelay = Math.random() * 5 + 's';
+        p.style.width = p.style.height = (2 + Math.random() * 3) + 'px';
+        if (Math.random() > 0.5) p.style.background = 'var(--neon-purple)';
+        container.appendChild(p);
+      }
+    }
+
+    // Listen for force logout
+    socket.on('force-logout', (data) => {
+      alert(data.message);
+      localStorage.removeItem('groupId');
+      localStorage.removeItem('token');
+      window.location.href = '/';
+    });
+
+    createParticles();
+    loadGroups();
+  </script>
+</body>
+</html>
