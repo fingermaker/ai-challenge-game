@@ -1,4 +1,4 @@
-const initSqlJs = require('sql.js');
+const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 
@@ -7,29 +7,25 @@ const DB_PATH = path.join(__dirname, 'data', 'game.db');
 let db = null;
 
 async function initDB() {
-  const SQL = await initSqlJs();
-  
   // Ensure data directory exists
   const dataDir = path.join(__dirname, 'data');
   if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
-  
-  // Load existing db or create new
-  if (fs.existsSync(DB_PATH)) {
-    const buffer = fs.readFileSync(DB_PATH);
-    db = new SQL.Database(buffer);
-  } else {
-    db = new SQL.Database();
-  }
+
+  db = new Database(DB_PATH);
+
+  // WAL 模式：提升并发读写性能，防止写入时阻塞读取
+  db.pragma('journal_mode = WAL');
+  db.pragma('synchronous = NORMAL');
 
   // Create tables
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS config (
       key TEXT PRIMARY KEY,
       value TEXT
     )
   `);
 
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS groups (
       id INTEGER PRIMARY KEY,
       session_token TEXT,
@@ -39,7 +35,7 @@ async function initDB() {
     )
   `);
 
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS game1_videos (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       filename TEXT,
@@ -50,7 +46,7 @@ async function initDB() {
     )
   `);
 
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS game1_submissions (
       group_id INTEGER,
       video_id INTEGER,
@@ -63,7 +59,7 @@ async function initDB() {
     )
   `);
 
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS game2_faces (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       real_image TEXT,
@@ -73,7 +69,7 @@ async function initDB() {
     )
   `);
 
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS game2_submissions (
       group_id INTEGER,
       face_id INTEGER,
@@ -85,7 +81,7 @@ async function initDB() {
     )
   `);
 
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS game3_submissions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       group_id INTEGER,
@@ -98,7 +94,7 @@ async function initDB() {
     )
   `);
 
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS game4_submissions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       group_id INTEGER,
@@ -110,7 +106,7 @@ async function initDB() {
     )
   `);
 
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS game_state (
       game_id TEXT PRIMARY KEY,
       current_question INTEGER DEFAULT 0,
@@ -120,7 +116,7 @@ async function initDB() {
     )
   `);
 
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS scores (
       group_id INTEGER,
       game_id TEXT,
@@ -130,95 +126,73 @@ async function initDB() {
   `);
 
   // Initialize game states
-  const games = ['game1', 'game2', 'game3', 'game4'];
-  games.forEach(g => {
-    const existing = db.exec(`SELECT * FROM game_state WHERE game_id = '${g}'`);
-    if (existing.length === 0) {
-      db.run(`INSERT INTO game_state (game_id, current_question, is_active, is_answer_shown) VALUES ('${g}', 0, 0, 0)`);
-    }
-  });
+  const insertGameState = db.prepare(
+    `INSERT OR IGNORE INTO game_state (game_id, current_question, is_active, is_answer_shown) VALUES (?, 0, 0, 0)`
+  );
+  ['game1', 'game2', 'game3', 'game4'].forEach(g => insertGameState.run(g));
 
   // Initialize config
-  const defaultConfig = {
-    group_count: process.env.GROUP_COUNT || '10',
-    extensions_enabled: '0'
-  };
-  for (const [key, value] of Object.entries(defaultConfig)) {
-    const existing = db.exec(`SELECT * FROM config WHERE key = '${key}'`);
-    if (existing.length === 0) {
-      db.run(`INSERT INTO config (key, value) VALUES ('${key}', '${value}')`);
-    }
-  }
+  const insertConfig = db.prepare(`INSERT OR IGNORE INTO config (key, value) VALUES (?, ?)`);
+  insertConfig.run('group_count', process.env.GROUP_COUNT || '10');
+  insertConfig.run('extensions_enabled', '0');
 
   // Initialize groups
   const groupCount = parseInt(getConfig('group_count'));
+  const insertGroup = db.prepare(`INSERT OR IGNORE INTO groups (id, is_online) VALUES (?, 0)`);
   for (let i = 1; i <= groupCount; i++) {
-    const existing = db.exec(`SELECT * FROM groups WHERE id = ${i}`);
-    if (existing.length === 0) {
-      db.run(`INSERT INTO groups (id, is_online) VALUES (${i}, 0)`);
-    }
+    insertGroup.run(i);
   }
-  // Migrations: add new columns to existing tables
+
+  // Migrations: add new columns to existing tables (safe: errors = already exists)
   try {
-    db.run(`ALTER TABLE game1_videos ADD COLUMN allow_frontend_play INTEGER DEFAULT 1`);
+    db.exec(`ALTER TABLE game1_videos ADD COLUMN allow_frontend_play INTEGER DEFAULT 1`);
   } catch (e) {
     // Column already exists, ignore
   }
 
-  saveDB();
   console.log('Database initialized successfully');
   return db;
 }
 
-function saveDB() {
-  if (db) {
-    const data = db.export();
-    const buffer = Buffer.from(data);
-    fs.writeFileSync(DB_PATH, buffer);
-  }
-}
+// No-op：better-sqlite3 每次写操作自动持久化到磁盘，无需手动保存
+function saveDB() {}
 
-// Helper functions
 function getConfig(key) {
-  const result = db.exec(`SELECT value FROM config WHERE key = '${key}'`);
-  return result.length > 0 ? result[0].values[0][0] : null;
+  const row = db.prepare(`SELECT value FROM config WHERE key = ?`).get(key);
+  return row ? row.value : null;
 }
 
 function setConfig(key, value) {
-  db.run(`INSERT OR REPLACE INTO config (key, value) VALUES ('${key}', '${value}')`);
-  saveDB();
+  db.prepare(`INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)`).run(key, value);
 }
 
 function runQuery(sql, params = []) {
   try {
-    db.run(sql, params);
-    saveDB();
+    // 用展开运算符传参：better-sqlite3 不接受数组直接传入，需展开为位置参数
+    db.prepare(sql).run(...params);
     return true;
   } catch (e) {
-    console.error('DB Error:', e.message);
+    console.error('DB Error:', e.message, '\nSQL:', sql);
     return false;
   }
 }
 
 function getAll(sql) {
   try {
-    const result = db.exec(sql);
-    if (result.length === 0) return [];
-    const columns = result[0].columns;
-    return result[0].values.map(row => {
-      const obj = {};
-      columns.forEach((col, i) => obj[col] = row[i]);
-      return obj;
-    });
+    return db.prepare(sql).all();
   } catch (e) {
-    console.error('DB Error:', e.message);
+    console.error('DB Error:', e.message, '\nSQL:', sql);
     return [];
   }
 }
 
 function getOne(sql) {
-  const results = getAll(sql);
-  return results.length > 0 ? results[0] : null;
+  try {
+    return db.prepare(sql).get() || null;
+  } catch (e) {
+    console.error('DB Error:', e.message, '\nSQL:', sql);
+    return null;
+  }
 }
 
 function getDB() {
