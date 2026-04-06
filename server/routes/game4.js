@@ -4,6 +4,7 @@ const fetch = require('node-fetch');
 const fs = require('fs');
 const path = require('path');
 const { getAll, getOne, runQuery } = require('../db');
+const { runWithQueue } = require('../utils/aiQueue');
 
 // Get game state for a group
 router.get('/state/:groupId', (req, res) => {
@@ -20,112 +21,113 @@ router.get('/state/:groupId', (req, res) => {
   });
 });
 
-// Generate image from sketch
+// Generate image from sketch（带限流保护）
 router.post('/generate/:groupId', async (req, res) => {
   const { groupId } = req.params;
   const { imageData } = req.body;
 
-  // Check attempts
+  // 次数检查在限流外执行（快速 DB 查询，不消耗 AI 资源）
   const submissions = getAll(`SELECT * FROM game4_submissions WHERE group_id = ${groupId}`);
   if (submissions.length >= 3) {
     return res.status(400).json({ error: '已用完所有机会（3次）' });
   }
 
   try {
-    // Step 1: Generate image from sketch using Gemini
-    const genResponse = await fetch(`${process.env.API_BASE_URL}/v1/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.API_KEY}`
-      },
-      body: JSON.stringify({
-        model: process.env.AI_MODEL,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: '请根据这幅手绘线稿/草图，生成一张对应的精美、写实风格的照片或图片。保持手绘内容的主题和构图，但让它变成一张高质量的真实照片效果。'
-              },
-              {
-                type: 'image_url',
-                image_url: { url: imageData }
-              }
-            ]
-          }
-        ],
-        max_tokens: 4096
-      })
-    });
+    // 两次串行 AI 请求（生成图 + 评分）都在限流内执行
+    // 这样每个 game4 请求只占用 1 个并发槽位
+    const { generatedImage, score } = await runWithQueue(async () => {
 
-    const genData = await genResponse.json();
-    let generatedImage = null;
-    
-    // Extract generated image from response
-    const message = genData.choices?.[0]?.message;
-    if (message?.content) {
-      if (typeof message.content === 'string') {
-        // API returns Markdown: ![image](data:image/png;base64,...)
-        // Try to extract from markdown image syntax first
-        const mdMatch = message.content.match(/!\[.*?\]\((data:image\/[^)]+)\)/);
-        if (mdMatch) {
-          generatedImage = mdMatch[1];
-        } else {
-          // Fallback: match data URI directly (up to end or whitespace)
-          const rawMatch = message.content.match(/(data:image\/\w+;base64,[A-Za-z0-9+/=]+)/);
-          if (rawMatch) generatedImage = rawMatch[1];
-        }
-      }
-      // Check for multimodal array response
-      if (Array.isArray(message.content)) {
-        for (const part of message.content) {
-          if (part.type === 'image_url') {
-            generatedImage = part.image_url?.url;
+      // Step 1: Generate image from sketch
+      const genResponse = await fetch(`${process.env.API_BASE_URL}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.API_KEY}`
+        },
+        body: JSON.stringify({
+          model: process.env.AI_MODEL,
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: '请根据这幅手绘线稿/草图，生成一张对应的精美、写实风格的照片或图片。保持手绘内容的主题和构图，但让它变成一张高质量的真实照片效果。'
+                },
+                {
+                  type: 'image_url',
+                  image_url: { url: imageData }
+                }
+              ]
+            }
+          ],
+          max_tokens: 4096
+        })
+      });
+
+      const genData = await genResponse.json();
+      let generatedImage = null;
+
+      const message = genData.choices?.[0]?.message;
+      if (message?.content) {
+        if (typeof message.content === 'string') {
+          const mdMatch = message.content.match(/!\[.*?\]\((data:image\/[^)]+)\)/);
+          if (mdMatch) {
+            generatedImage = mdMatch[1];
+          } else {
+            const rawMatch = message.content.match(/(data:image\/\w+;base64,[A-Za-z0-9+/=]+)/);
+            if (rawMatch) generatedImage = rawMatch[1];
           }
         }
-      }
-    }
-    console.log(`[Game4] Group ${groupId}: image generated = ${!!generatedImage}, content length = ${message?.content?.length || 0}`);
-
-    // Step 2: Score the generated result
-    const scoreImageToEvaluate = generatedImage || imageData;
-    const scoreResponse = await fetch(`${process.env.API_BASE_URL}/v1/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.API_KEY}`
-      },
-      body: JSON.stringify({
-        model: process.env.AI_MODEL_FALLBACK || process.env.AI_MODEL,
-        messages: [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'text',
-                text: '请根据这张AI生成的图片进行评分。评分标准：主要看画面中有没有特别的地方（独特的元素、创意细节、有趣的组合等），特别的地方越多分值越高。最高10分，最低5分。请只回答一个数字（5-10之间的整数）。'
-              },
-              {
-                type: 'image_url',
-                image_url: { url: scoreImageToEvaluate }
-              }
-            ]
+        if (Array.isArray(message.content)) {
+          for (const part of message.content) {
+            if (part.type === 'image_url') {
+              generatedImage = part.image_url?.url;
+            }
           }
-        ],
-        max_tokens: 50
-      })
+        }
+      }
+      console.log(`[Game4] Group ${groupId}: image generated = ${!!generatedImage}, content length = ${message?.content?.length || 0}`);
+
+      // Step 2: Score the generated result
+      const scoreImageToEvaluate = generatedImage || imageData;
+      const scoreResponse = await fetch(`${process.env.API_BASE_URL}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.API_KEY}`
+        },
+        body: JSON.stringify({
+          model: process.env.AI_MODEL_FALLBACK || process.env.AI_MODEL,
+          messages: [
+            {
+              role: 'user',
+              content: [
+                {
+                  type: 'text',
+                  text: '请根据这张AI生成的图片进行评分。评分标准：主要看画面中有没有特别的地方（独特的元素、创意细节、有趣的组合等），特别的地方越多分值越高。最高10分，最低5分。请只回答一个数字（5-10之间的整数）。'
+                },
+                {
+                  type: 'image_url',
+                  image_url: { url: scoreImageToEvaluate }
+                }
+              ]
+            }
+          ],
+          max_tokens: 50
+        })
+      });
+
+      const scoreData = await scoreResponse.json();
+      const scoreContent = scoreData.choices?.[0]?.message?.content || '7';
+      let score = parseInt(scoreContent.match(/\d+/)?.[0] || '7');
+      score = Math.max(5, Math.min(10, score));
+
+      return { generatedImage, score };
     });
 
-    const scoreData = await scoreResponse.json();
-    const scoreContent = scoreData.choices?.[0]?.message?.content || '7';
-    let score = parseInt(scoreContent.match(/\d+/)?.[0] || '7');
-    score = Math.max(5, Math.min(10, score));
-
+    // AI 完成后执行文件保存和 DB 写入（不在限流内）
     const attemptNum = submissions.length + 1;
-
-    // Save sketch and generated image
     const uploadsDir = path.join(__dirname, '..', 'data', 'uploads');
     const sketchFilename = `sketch_g${groupId}_a${attemptNum}_${Date.now()}.png`;
     const sketchBase64 = imageData.replace(/^data:image\/\w+;base64,/, '');
@@ -151,9 +153,13 @@ router.post('/generate/:groupId', async (req, res) => {
       attemptsRemaining: 3 - attemptNum,
       message: `创意评分：${score}分！剩余${3 - attemptNum}次机会`
     });
+
   } catch (error) {
     console.error('Game4 generate error:', error);
-    res.status(500).json({ error: 'AI生成失败，请重试' });
+    const isBusy = error.message.includes('繁忙') || error.message.includes('超时');
+    res.status(isBusy ? 503 : 500).json({
+      error: isBusy ? error.message : 'AI生成失败，请重试'
+    });
   }
 });
 
