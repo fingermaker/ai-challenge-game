@@ -72,6 +72,19 @@
       .admin-layout { grid-template-columns: 1fr; }
       .sidebar { position: relative; height: auto; }
     }
+    .attempt-img {
+      width: 100%;
+      aspect-ratio: 1;
+      object-fit: cover;
+      border-radius: var(--radius-sm, 6px);
+      cursor: pointer;
+      border: 1px solid var(--border-glass, rgba(255,255,255,0.1));
+      transition: transform 0.2s, border-color 0.2s;
+    }
+    .attempt-img:hover {
+      transform: scale(1.05);
+      border-color: var(--neon-green, #00ff88);
+    }
   </style>
 </head>
 <body>
@@ -609,103 +622,128 @@
     }
 
     async function loadGame4() {
-      loadGameState('game4');
-      const sRes = await fetch('/api/admin/submissions/game4', { headers });
-      const subs = await sRes.json();
+      try {
+        loadGameState('game4');
+        const sRes = await fetch('/api/admin/submissions/game4', { headers });
+        const subs = await sRes.json();
 
-      if (!subs.length) {
-        document.getElementById('game4Submissions').innerHTML = '<p style="color:var(--text-muted)">暂无提交</p>';
-        return;
-      }
+        if (!subs.length) {
+          document.getElementById('game4Submissions').innerHTML = '<p style="color:var(--text-muted)">暂无提交</p>';
+          return;
+        }
 
-      // Group submissions by group_id
-      const groups = {};
-      subs.forEach(s => {
-        if (!groups[s.group_id]) groups[s.group_id] = [];
-        groups[s.group_id].push(s);
-      });
+        // Group submissions by group_id
+        const groups = {};
+        subs.forEach(s => {
+          if (!groups[s.group_id]) groups[s.group_id] = [];
+          groups[s.group_id].push(s);
+        });
 
-      // Sort group IDs numerically
-      const sortedGroupIds = Object.keys(groups).map(Number).sort((a, b) => a - b);
+        // Fix 4: Sort group IDs numerically but keep as strings so groups[groupId] lookups work
+        const sortedGroupIds = Object.keys(groups).sort((a, b) => Number(a) - Number(b));
 
-      let html = '<div style="display:flex; flex-direction:column; gap:1.5rem;">';
+        let html = '<div style="display:flex; flex-direction:column; gap:1.5rem;">';
 
-      sortedGroupIds.forEach(groupId => {
-        const attempts = groups[groupId].sort((a, b) => a.attempt_number - b.attempt_number);
-        const attemptCount = attempts.length;
+        sortedGroupIds.forEach(groupId => {
+          // Fix 1: Coerce groupId to a number for safe text interpolation
+          const gId = Number(groupId);
 
-        // Build attempt columns
-        let attemptsHtml = '';
-        attempts.forEach(s => {
-          const sketchUrl = `/uploads/${s.sketch_path}`;
-          const hasGenerated = s.generated_path && s.generated_path.trim() !== '';
-          const genUrl = hasGenerated ? `/uploads/${s.generated_path}` : null;
+          // Fix 5: Non-mutating sort so original array is not altered
+          const attempts = [...groups[groupId]].sort((a, b) => a.attempt_number - b.attempt_number);
+          const attemptCount = attempts.length;
 
-          const sketchImgHtml = `
+          // Build attempt columns
+          let attemptsHtml = '';
+          attempts.forEach(s => {
+            // Fix 1: Coerce numeric fields to numbers before interpolation
+            const safeAttempt = Number(s.attempt_number);
+            const safeScore   = Number(s.score);
+
+            // Fix 2 + 6: Sanitise file paths; guard sketch_path for null/empty
+            const hasSketch   = s.sketch_path && s.sketch_path.trim() !== '';
+            const sketchSrc   = hasSketch
+              ? `/uploads/${String(s.sketch_path).replace(/"/g, '')}`
+              : null;
+
+            const hasGenerated = s.generated_path && s.generated_path.trim() !== '';
+            const genSrc       = hasGenerated
+              ? `/uploads/${String(s.generated_path).replace(/"/g, '')}`
+              : null;
+
+            // Fix 7: Use CSS class instead of inline hover handlers
+            const sketchImgHtml = hasSketch
+              ? `
             <div style="text-align:center; flex:1;">
               <p style="font-size:0.7rem; color:var(--text-muted); margin-bottom:0.25rem;">线稿</p>
-              <img src="${sketchUrl}"
+              <img src="${sketchSrc}"
+                   class="attempt-img"
                    onclick="openLightbox(this.src)"
-                   title="点击放大"
-                   style="width:100%; aspect-ratio:1; object-fit:cover; border-radius:var(--radius-sm);
-                          cursor:pointer; border:1px solid rgba(255,255,255,0.1);
-                          transition:transform 0.2s, border-color 0.2s;"
-                   onmouseover="this.style.transform='scale(1.03)'; this.style.borderColor='var(--neon-blue)'"
-                   onmouseout="this.style.transform='scale(1)'; this.style.borderColor='rgba(255,255,255,0.1)'">
+                   title="点击放大">
+            </div>`
+              : `<div style="flex:1; text-align:center;">
+              <p style="font-size:0.7rem; color:var(--text-muted); margin-bottom:0.25rem;">线稿</p>
+              <div class="no-image-placeholder"
+                   style="aspect-ratio:1; display:flex; align-items:center; justify-content:center;
+                          background:rgba(0,0,0,0.25); border-radius:var(--radius-sm);
+                          border:1px dashed rgba(255,255,255,0.15);">
+                <span style="color:var(--text-muted); font-size:0.78rem;">无线稿</span>
+              </div>
             </div>`;
 
-          const genImgHtml = genUrl
-            ? `<div style="text-align:center; flex:1;">
-                <p style="font-size:0.7rem; color:var(--text-muted); margin-bottom:0.25rem;">AI生成</p>
-                <img src="${genUrl}"
-                     onclick="openLightbox(this.src)"
-                     title="点击放大"
-                     style="width:100%; aspect-ratio:1; object-fit:cover; border-radius:var(--radius-sm);
-                            cursor:pointer; border:1px solid rgba(255,255,255,0.1);
-                            transition:transform 0.2s, border-color 0.2s;"
-                     onmouseover="this.style.transform='scale(1.03)'; this.style.borderColor='var(--neon-purple)'"
-                     onmouseout="this.style.transform='scale(1)'; this.style.borderColor='rgba(255,255,255,0.1)'">
-               </div>`
-            : `<div style="flex:1; text-align:center;">
-                <p style="font-size:0.7rem; color:var(--text-muted); margin-bottom:0.25rem;">AI生成</p>
-                <div class="no-image-placeholder"
-                     style="aspect-ratio:1; display:flex; align-items:center; justify-content:center;
-                            background:rgba(0,0,0,0.25); border-radius:var(--radius-sm);
-                            border:1px dashed rgba(255,255,255,0.15);">
-                  <span style="color:var(--text-muted); font-size:0.78rem;">等待生成...</span>
-                </div>
-               </div>`;
+            // Fix 7: Use CSS class instead of inline hover handlers
+            const genImgHtml = genSrc
+              ? `<div style="text-align:center; flex:1;">
+              <p style="font-size:0.7rem; color:var(--text-muted); margin-bottom:0.25rem;">AI生成</p>
+              <img src="${genSrc}"
+                   class="attempt-img"
+                   onclick="openLightbox(this.src)"
+                   title="点击放大">
+            </div>`
+              : `<div style="flex:1; text-align:center;">
+              <p style="font-size:0.7rem; color:var(--text-muted); margin-bottom:0.25rem;">AI生成</p>
+              <div class="no-image-placeholder"
+                   style="aspect-ratio:1; display:flex; align-items:center; justify-content:center;
+                          background:rgba(0,0,0,0.25); border-radius:var(--radius-sm);
+                          border:1px dashed rgba(255,255,255,0.15);">
+                <span style="color:var(--text-muted); font-size:0.78rem;">等待生成...</span>
+              </div>
+            </div>`;
 
-          attemptsHtml += `
+            attemptsHtml += `
             <div style="flex:1; min-width:160px; max-width:260px; padding:0.6rem;
                         background:rgba(0,0,0,0.15); border-radius:var(--radius-sm);
                         border:1px solid rgba(255,255,255,0.06);">
               <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
-                <span style="font-size:0.8rem; font-weight:600; color:var(--neon-green);">尝试 #${s.attempt_number}</span>
-                <span style="font-size:0.85rem; font-family:'Orbitron'; font-weight:700; color:var(--neon-purple);">${s.score}分</span>
+                <span style="font-size:0.8rem; font-weight:600; color:var(--neon-green);">尝试 #${safeAttempt}</span>
+                <span style="font-size:0.85rem; font-family:'Orbitron'; font-weight:700; color:var(--neon-purple);">${safeScore}分</span>
               </div>
               <div style="display:flex; gap:0.4rem;">
                 ${sketchImgHtml}
                 ${genImgHtml}
               </div>
             </div>`;
-        });
+          });
 
-        html += `
+          html += `
           <div style="background:var(--bg-glass); border:var(--border-glass); border-radius:var(--radius-md); overflow:hidden;">
             <div style="padding:0.65rem 1rem; background:rgba(0,212,255,0.08); border-bottom:var(--border-glass);
                         display:flex; justify-content:space-between; align-items:center;">
-              <span style="font-family:'Orbitron'; font-weight:700; color:var(--text-primary); font-size:1rem;">第 ${groupId} 组</span>
+              <span style="font-family:'Orbitron'; font-weight:700; color:var(--text-primary); font-size:1rem;">第 ${gId} 组</span>
               <span style="font-size:0.82rem; color:var(--text-secondary);">共 ${attemptCount} 次尝试</span>
             </div>
             <div style="padding:0.75rem; display:flex; flex-wrap:wrap; gap:0.75rem;">
               ${attemptsHtml}
             </div>
           </div>`;
-      });
+        });
 
-      html += '</div>';
-      document.getElementById('game4Submissions').innerHTML = html;
+        html += '</div>';
+        document.getElementById('game4Submissions').innerHTML = html;
+      } catch (e) {
+        console.error('Load game4 error:', e);
+        const container = document.getElementById('game4Submissions');
+        if (container) container.innerHTML = '<p style="color:var(--neon-red,#ff4444)">加载失败，请刷新重试</p>';
+      }
     }
 
     function openLightbox(src) {
