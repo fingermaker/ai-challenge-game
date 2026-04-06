@@ -37,34 +37,32 @@ function runWithQueue(fn) {
 function executeTask(task) {
   activeCount++;
 
-  // Bug fix: guard against double-call of finishTask.
-  // Without this, if the timeout fires first (calling finishTask once), then
-  // task.fn() eventually settles and .finally(finishTask) fires a second time,
-  // causing activeCount to go negative and breaking the concurrency limit.
-  let finished = false;
+  let settled = false;
 
-  function safeFinish() {
-    if (finished) return;
-    finished = true;
+  function safeResolve(result) {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timeoutId);
+    task.resolve(result);
+    finishTask();
+  }
+
+  function safeReject(err) {
+    if (settled) return;
+    settled = true;
+    clearTimeout(timeoutId);
+    task.reject(err);
     finishTask();
   }
 
   // 超时保护：防止单个 AI 请求永久挂起占用并发槽位
   const timeoutId = setTimeout(() => {
-    task.reject(new Error('AI请求超时，请重试'));
-    safeFinish();
+    safeReject(new Error('AI请求超时，请重试'));
   }, REQUEST_TIMEOUT_MS);
 
   task.fn()
-    .then(result => {
-      clearTimeout(timeoutId);
-      task.resolve(result);
-    })
-    .catch(err => {
-      clearTimeout(timeoutId);
-      task.reject(err);
-    })
-    .finally(safeFinish);
+    .then(result => safeResolve(result))
+    .catch(err => safeReject(err));
 }
 
 function finishTask() {
