@@ -171,6 +171,7 @@
     let drawing = false;
     let history = [];
     let currentPath = [];
+    let canDraw = true; // 控制是否允许绘画（AI生成期间锁定）
 
     function initCanvas() {
       const rect = canvas.getBoundingClientRect();
@@ -217,6 +218,7 @@
     }
 
     function startD(e) {
+      if (!canDraw) return; // AI生成中禁止绘画
       drawing = true;
       const p = getP(e);
       const size = parseInt(document.getElementById('sketchBrushSize').value);
@@ -255,6 +257,16 @@
       try {
         const res = await fetch(`/api/game4/state/${groupId}`);
         const data = await res.json();
+
+        // 游戏未激活时显示等待状态
+        if (!data.active) {
+          document.getElementById('waitingState').classList.remove('hidden');
+          document.getElementById('gameActive').classList.add('hidden');
+          return;
+        }
+        document.getElementById('waitingState').classList.add('hidden');
+        document.getElementById('gameActive').classList.remove('hidden');
+
         attemptsUsed = data.attemptsUsed;
         updateAttempts();
         document.getElementById('totalScore').textContent = data.totalScore;
@@ -319,10 +331,13 @@
 
       const btn = document.getElementById('generateBtn');
       btn.disabled = true;
+      canDraw = false; // 锁定画板，防止提前绘制下一幅
+      canvas.style.opacity = '0.5';
+      canvas.style.pointerEvents = 'none';
       document.getElementById('generatingOverlay').classList.remove('hidden');
       document.getElementById('resultPlaceholder').classList.add('hidden');
 
-      const imageData = compressImage(canvas, 1024, 768, 0.8);
+      const imageData = compressImage(canvas, 512, 512, 0.8);
 
       try {
         const res = await fetch(`/api/game4/generate/${groupId}`, {
@@ -337,6 +352,9 @@
           document.getElementById('generatingOverlay').classList.add('hidden');
           document.getElementById('resultPlaceholder').classList.remove('hidden');
           btn.disabled = false;
+          canDraw = true;
+          canvas.style.opacity = '1';
+          canvas.style.pointerEvents = 'auto';
           return;
         }
 
@@ -354,11 +372,21 @@
           document.getElementById('currentAttemptScore').textContent = data.score;
 
           await loadState();
+
+          // 清空画板，准备下一次创作
+          clearSketch();
+          canDraw = true;
+          canvas.style.opacity = '1';
+          canvas.style.pointerEvents = 'auto';
+
           btn.disabled = attemptsUsed >= 3;
           if (attemptsUsed < 3) btn.textContent = '🎨 AI 生成大片';
         } else {
           alert(data.error || 'AI生成失败');
           document.getElementById('resultPlaceholder').classList.remove('hidden');
+          canDraw = true;
+          canvas.style.opacity = '1';
+          canvas.style.pointerEvents = 'auto';
           btn.disabled = false;
           btn.textContent = '🎨 AI 生成大片';
         }
@@ -367,11 +395,16 @@
         document.getElementById('generatingOverlay').classList.add('hidden');
         document.getElementById('resultPlaceholder').classList.remove('hidden');
         alert('生成失败，请重试');
+        canDraw = true;
+        canvas.style.opacity = '1';
+        canvas.style.pointerEvents = 'auto';
         btn.disabled = false;
         btn.textContent = '🎨 AI 生成大片';
       }
     }
 
+    socket.on('game-state-update', ({ gameId }) => { if (gameId === 'game4') loadState(); });
+    socket.on('game-reset', ({ gameId }) => { if (gameId === 'game4') loadState(); });
     socket.on('force-logout', () => { localStorage.clear(); window.location.href = '/'; });
 
     setTimeout(initCanvas, 100);

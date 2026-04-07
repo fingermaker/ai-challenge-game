@@ -136,6 +136,16 @@ async function initDB() {
   insertConfig.run('group_count', process.env.GROUP_COUNT || '10');
   insertConfig.run('extensions_enabled', '0');
 
+  // Admin password (default: admin123, must change on first login)
+  insertConfig.run('admin_password', process.env.ADMIN_PASSWORD || 'admin123');
+  insertConfig.run('password_changed', '0');
+
+  // Initialize AI config defaults (阿里百炼 DashScope)
+  insertConfig.run('api_base_url', 'https://dashscope.aliyuncs.com/compatible-mode/v1');
+  insertConfig.run('api_key', '');
+  insertConfig.run('ai_model', 'qwen3.6-plus');
+  insertConfig.run('ai_model_image', 'wanx2.1-t2i-turbo');
+
   // Initialize groups
   const groupCount = parseInt(getConfig('group_count'));
   const insertGroup = db.prepare(`INSERT OR IGNORE INTO groups (id, is_online) VALUES (?, 0)`);

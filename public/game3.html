@@ -369,7 +369,15 @@
       btn.disabled = true;
       btn.textContent = '🔄 AI正在识别...';
 
-      const imageData = canvas.toDataURL('image/png');
+      // 压缩图片：缩放到256x256、JPEG格式，大幅减少传输和AI处理时间
+      const tmpCanvas = document.createElement('canvas');
+      tmpCanvas.width = 256;
+      tmpCanvas.height = 256;
+      const tmpCtx = tmpCanvas.getContext('2d');
+      tmpCtx.fillStyle = 'white';
+      tmpCtx.fillRect(0, 0, 256, 256);
+      tmpCtx.drawImage(canvas, 0, 0, 256, 256);
+      const imageData = tmpCanvas.toDataURL('image/jpeg', 0.7);
       try {
         const res = await fetch(`/api/game3/recognize/${groupId}`, {
           method: 'POST',

@@ -124,11 +124,15 @@
     let currentFace = null;
     let selectedSide = null;
     let timerInterval = null;
+    let renderVersion = 0; // 防竞态
+    let answerShown = false; // 记录答案是否已公布
 
     async function loadCurrentState() {
+      const thisVersion = ++renderVersion;
       try {
         const res = await fetch(`/api/game2/current/${groupId}`);
         const data = await res.json();
+        if (thisVersion !== renderVersion) return; // 丢弃过期响应
 
         if (!data.active) {
           document.getElementById('waitingState').classList.remove('hidden');
@@ -217,6 +221,10 @@
 
     async function submitFaceAnswer() {
       if (!selectedSide || !currentFace) return;
+      if (answerShown) {
+        alert('答案已公布，无法提交');
+        return;
+      }
       document.getElementById('submitBtn').disabled = true;
 
       try {
@@ -275,8 +283,22 @@
     }
 
     socket.on('game-state-update', ({ gameId }) => { if (gameId === 'game2') loadCurrentState(); });
-    socket.on('next-question', ({ gameId }) => { if (gameId === 'game2') loadCurrentState(); });
-    socket.on('show-answer', ({ gameId }) => { if (gameId === 'game2') loadCurrentState(); });
+    socket.on('next-question', ({ gameId }) => {
+      if (gameId === 'game2') {
+        // 立即清空结果区域，防止旧答案闪现
+        document.getElementById('resultArea').classList.add('hidden');
+        document.getElementById('resultBanner').textContent = '';
+        answerShown = false;
+        if (timerInterval) clearInterval(timerInterval);
+        loadCurrentState();
+      }
+    });
+    socket.on('show-answer', ({ gameId }) => {
+      if (gameId === 'game2') {
+        answerShown = true;
+        loadCurrentState();
+      }
+    });
     socket.on('game-reset', ({ gameId }) => { if (gameId === 'game2') loadCurrentState(); });
     socket.on('force-logout', () => { localStorage.clear(); window.location.href = '/'; });
 

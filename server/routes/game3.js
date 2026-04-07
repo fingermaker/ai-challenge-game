@@ -3,6 +3,7 @@ const router = express.Router();
 const fetch = require('node-fetch');
 const { getAll, getOne, runQuery } = require('../db');
 const { runWithQueue } = require('../utils/aiQueue');
+const { getAIConfig } = require('../utils/aiConfig');
 
 const THEMES = [
   '猫', '狗', '房子', '太阳', '树',
@@ -41,21 +42,22 @@ router.post('/recognize/:groupId', async (req, res) => {
   try {
     // runWithQueue 限制并发：超出 MAX_CONCURRENT 的请求排队等待
     const { isMatch, guess } = await runWithQueue(async () => {
-      const response = await fetch(`${process.env.API_BASE_URL}/v1/chat/completions`, {
+      const aiCfg = getAIConfig();
+      const response = await fetch(`${aiCfg.apiBaseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.API_KEY}`
+          'Authorization': `Bearer ${aiCfg.apiKey}`
         },
         body: JSON.stringify({
-          model: process.env.AI_MODEL,
+          model: aiCfg.aiModel,
           messages: [
             {
               role: 'user',
               content: [
                 {
                   type: 'text',
-                  text: `这是一幅简笔画。请判断这幅画画的是不是"${theme}"。请只回答一个JSON格式：{"is_match": true/false, "guess": "你认为画的是什么"}`
+                  text: `看这幅简笔画，它画的是"${theme}"吗？只回答JSON：{"is_match":true/false,"guess":"你猜的物体名"}`
                 },
                 {
                   type: 'image_url',
@@ -64,7 +66,7 @@ router.post('/recognize/:groupId', async (req, res) => {
               ]
             }
           ],
-          max_tokens: 200
+          max_tokens: 80
         })
       });
 
@@ -92,7 +94,10 @@ router.post('/recognize/:groupId', async (req, res) => {
     const score = isMatch ? 5 : 0;
 
     // AI 请求完成后再操作数据库（DB 操作不需要限流）
-    runQuery(`INSERT INTO game3_submissions (group_id, theme, theme_index, recognized_as, is_correct, score, submitted_at) VALUES (${groupId}, '${theme}', ${themeIndex}, '${guess.replace(/'/g, "''")}', ${isMatch ? 1 : 0}, ${score}, datetime('now'))`);
+    runQuery(
+      `INSERT INTO game3_submissions (group_id, theme, theme_index, recognized_as, is_correct, score, submitted_at) VALUES (?, ?, ?, ?, ?, ?, datetime('now'))`,
+      [groupId, theme, themeIndex, guess, isMatch ? 1 : 0, score]
+    );
 
     const io = req.app.get('io');
     io.emit('submission-update', { gameId: 'game3', groupId: parseInt(groupId) });

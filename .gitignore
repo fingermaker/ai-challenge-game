@@ -1,15 +1,19 @@
 node_modules/
 server/data/game.db
+server/data/game.db-wal
+server/data/game.db-shm
 server/data/uploads/*
 server/data/videos/*
 !server/data/uploads/.gitkeep
 !server/data/videos/.gitkeep
 .env
 
+# IDE & AI tools
+.claude/
+.gemini/
+
 # Temp files
 *.log
-api_test.json
-api_response_debug.json
-gemini_models.txt
 *.zip
-1.png
+
+*.bak

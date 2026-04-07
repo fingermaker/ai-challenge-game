@@ -1,0 +1,13 @@
+node_modules
+.git
+.claude
+.gemini
+.env
+*.log
+*.zip
+小游戏
+server/data/game.db
+server/data/game.db-shm
+server/data/game.db-wal
+server/data/uploads/*
+server/data/videos/*

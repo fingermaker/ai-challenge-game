@@ -37,6 +37,12 @@ router.post('/submit/:groupId/:faceId', (req, res) => {
   const { groupId, faceId } = req.params;
   const { answer } = req.body; // 'left' or 'right'
 
+  // 防止答案公布后提交（与 game1 一致的防作弊机制）
+  const state = getOne("SELECT * FROM game_state WHERE game_id = 'game2'");
+  if (state && state.is_answer_shown === 1) {
+    return res.status(400).json({ error: '答案已公布，无法修改' });
+  }
+
   const existing = getOne(`SELECT * FROM game2_submissions WHERE group_id = ${groupId} AND face_id = ${faceId}`);
   if (existing && existing.answer) {
     return res.status(400).json({ error: '已提交过答案' });

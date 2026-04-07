@@ -3,18 +3,53 @@ const router = express.Router();
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const fetch = require('node-fetch');
 const { getAll, getOne, runQuery, getConfig, setConfig, saveDB } = require('../db');
+const { getAIConfig, updateAIConfig } = require('../utils/aiConfig');
 
-// Admin auth middleware
+// Admin auth middleware - 从数据库读取密码
 function adminAuth(req, res, next) {
   const password = req.headers['x-admin-password'] || req.query.password;
-  if (password !== process.env.ADMIN_PASSWORD) {
+  const dbPassword = getConfig('admin_password') || 'admin123';
+  if (password !== dbPassword) {
     return res.status(401).json({ error: '密码错误' });
   }
   next();
 }
 
+// Login endpoint (不需要认证) - 返回是否需要改密码
+router.post('/login', (req, res) => {
+  const { password } = req.body;
+  const dbPassword = getConfig('admin_password') || 'admin123';
+  if (password !== dbPassword) {
+    return res.status(401).json({ success: false, error: '密码错误' });
+  }
+  const passwordChanged = getConfig('password_changed') === '1';
+  res.json({ success: true, passwordChanged });
+});
+
 router.use(adminAuth);
+
+// Change password
+router.post('/change-password', (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+  const dbPassword = getConfig('admin_password') || 'admin123';
+
+  if (currentPassword !== dbPassword) {
+    return res.status(400).json({ success: false, error: '当前密码错误' });
+  }
+  if (!newPassword || newPassword.length < 4) {
+    return res.status(400).json({ success: false, error: '新密码至少4位' });
+  }
+  if (newPassword === 'admin123') {
+    return res.status(400).json({ success: false, error: '请使用一个不同于默认密码的新密码' });
+  }
+
+  setConfig('admin_password', newPassword);
+  setConfig('password_changed', '1');
+  console.log('[Admin] Password changed');
+  res.json({ success: true, message: '密码修改成功！请使用新密码重新登录。' });
+});
 
 // Video upload config
 const videoStorage = multer.diskStorage({
@@ -284,6 +319,91 @@ router.post('/clear-all', (req, res) => {
 
   console.log(`[Admin] All data cleared. Uploads cleared: ${!!clearUploads}`);
   res.json({ success: true, message: '所有比赛数据已清除' });
+});
+
+// ===== AI Config =====
+router.get('/ai-config', (req, res) => {
+  const config = getAIConfig();
+  // 脱敏：只返回前8位和后4位
+  let maskedKey = '';
+  if (config.apiKey && config.apiKey.length > 12) {
+    maskedKey = config.apiKey.slice(0, 8) + '****' + config.apiKey.slice(-4);
+  } else if (config.apiKey) {
+    maskedKey = '****';
+  }
+  res.json({
+    apiBaseUrl: config.apiBaseUrl,
+    apiKey: config.apiKey,
+    apiKeyMasked: maskedKey,
+    aiModel: config.aiModel,
+    aiModelImage: config.aiModelImage,
+  });
+});
+
+router.post('/ai-config', (req, res) => {
+  const { apiBaseUrl, apiKey, aiModel, aiModelImage } = req.body;
+  updateAIConfig({
+    api_base_url: apiBaseUrl,
+    api_key: apiKey,
+    ai_model: aiModel,
+    ai_model_image: aiModelImage,
+  });
+  console.log('[Admin] AI config updated');
+  res.json({ success: true, message: 'AI配置已保存' });
+});
+
+router.post('/ai-config/test', async (req, res) => {
+  const { apiBaseUrl, apiKey, aiModel } = req.body;
+
+  if (!apiBaseUrl || !apiKey || !aiModel) {
+    return res.status(400).json({ success: false, message: '请填写完整的API配置' });
+  }
+
+  try {
+    const url = `${apiBaseUrl.replace(/\/+$/, '')}/chat/completions`;
+    const startTime = Date.now();
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: aiModel,
+        messages: [
+          { role: 'user', content: '请回复"连接成功"四个字' }
+        ],
+        max_tokens: 50
+      })
+    });
+
+    const elapsed = Date.now() - startTime;
+    const data = await response.json();
+
+    if (!response.ok) {
+      const errMsg = data.error?.message || data.message || JSON.stringify(data);
+      return res.json({
+        success: false,
+        message: `API返回错误 (${response.status}): ${errMsg}`,
+        elapsed
+      });
+    }
+
+    const content = data.choices?.[0]?.message?.content || '';
+    res.json({
+      success: true,
+      message: `✅ 连接成功！模型回复: "${content.slice(0, 100)}"`,
+      elapsed,
+      model: data.model || aiModel
+    });
+
+  } catch (error) {
+    res.json({
+      success: false,
+      message: `连接失败: ${error.message}`
+    });
+  }
 });
 
 module.exports = router;

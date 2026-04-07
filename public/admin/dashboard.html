@@ -308,6 +308,64 @@
         </div>
 
         <div class="glass-card mb-3">
+          <div class="section-title">🤖 AI 接口配置</div>
+          <p style="color: var(--text-secondary); margin-bottom: 1rem; font-size: 0.85rem;">
+            配置 AI API 接口信息。默认使用阿里百炼（DashScope）的 OpenAI 兼容接口。<br>
+            <span style="color: var(--neon-blue);">获取API Key：访问 <a href="https://bailian.console.aliyun.com/" target="_blank" style="color: var(--neon-blue);">阿里云百炼控制台</a></span>
+          </p>
+
+          <div class="config-row">
+            <label style="min-width: 120px;">API 地址</label>
+            <input type="text" class="input" style="flex:1; max-width: 500px;" id="aiBaseUrlInput"
+                   placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1">
+          </div>
+          <div class="config-row">
+            <label style="min-width: 120px;">API Key</label>
+            <div style="flex:1; max-width: 500px; display:flex; gap:0.5rem;">
+              <input type="password" class="input" style="flex:1;" id="aiApiKeyInput" placeholder="sk-xxxx...">
+              <button class="btn btn-ghost btn-sm" onclick="toggleKeyVisibility()" id="toggleKeyBtn" title="显示/隐藏">👁️</button>
+            </div>
+          </div>
+          <div class="config-row">
+            <label style="min-width: 120px;">智能模型</label>
+            <input type="text" class="input" style="width: 220px;" id="aiModelInput" placeholder="qwen3.6-plus">
+            <span style="color: var(--text-muted); font-size: 0.8rem;">多模态模型，用于画画识别、线稿评测</span>
+          </div>
+          <div class="config-row">
+            <label style="min-width: 120px;">文生图模型</label>
+            <input type="text" class="input" style="width: 220px;" id="aiModelImageInput" placeholder="qwen-image-2.0-pro">
+            <span style="color: var(--text-muted); font-size: 0.8rem;">用于线稿变大片的图片生成</span>
+          </div>
+
+          <div style="display: flex; gap: 0.75rem; margin-top: 1rem; flex-wrap: wrap; align-items: center;">
+            <button class="btn btn-primary" onclick="saveAIConfig()">💾 保存配置</button>
+            <button class="btn btn-success" onclick="testAIConfig()" id="testAIBtn">🧪 测试连接</button>
+            <span id="aiTestResult" style="font-size: 0.85rem;"></span>
+          </div>
+          <div id="aiTestDetail" style="margin-top: 0.75rem; display: none; padding: 0.75rem; background: rgba(0,0,0,0.2); border-radius: var(--radius-sm); font-size: 0.85rem; word-break: break-all;"></div>
+        </div>
+
+        <div class="glass-card mb-3">
+          <div class="section-title">🔑 修改后台密码</div>
+          <div class="config-row">
+            <label style="min-width: 120px;">当前密码</label>
+            <input type="password" class="input" style="width: 220px;" id="currentPwInput" placeholder="输入当前密码">
+          </div>
+          <div class="config-row">
+            <label style="min-width: 120px;">新密码</label>
+            <input type="password" class="input" style="width: 220px;" id="newPwInput" placeholder="至少4位">
+          </div>
+          <div class="config-row">
+            <label style="min-width: 120px;">确认新密码</label>
+            <input type="password" class="input" style="width: 220px;" id="newPwInput2" placeholder="再次输入新密码">
+          </div>
+          <div style="margin-top: 1rem;">
+            <button class="btn btn-primary" onclick="changeAdminPassword()">🔑 修改密码</button>
+            <span id="pwChangeResult" style="margin-left: 1rem; font-size: 0.85rem;"></span>
+          </div>
+        </div>
+
+        <div class="glass-card mb-3">
           <div class="section-title" style="color: #ef4444;">🗑️ 数据管理</div>
           <p style="color: var(--text-secondary); margin-bottom: 1rem; font-size: 0.9rem;">
             ⚠️ 清除数据操作不可恢复，所有学生提交的成绩将被清空，并强制所有学生退出登录。适合在新一轮比赛前使用。
@@ -340,6 +398,19 @@
     if (!adminPw) window.location.href = '/admin/';
 
     const headers = { 'Content-Type': 'application/json', 'x-admin-password': adminPw };
+
+    // 拦截 401 请求，自动退出登录
+    const originalFetch = window.fetch;
+    window.fetch = async function(...args) {
+      const response = await originalFetch.apply(this, args);
+      if (response.status === 401) {
+        alert('登录信息失效或后台已重置，请重新登录');
+        localStorage.clear();
+        window.location.href = '/admin/';
+      }
+      return response;
+    };
+
     const socket = io();
     socket.emit('join-admin');
 
@@ -780,6 +851,154 @@
       const config = await res.json();
       document.getElementById('groupCountInput').value = config.groupCount;
       document.getElementById('extensionsToggle').checked = config.extensionsEnabled;
+
+      // Load AI config
+      try {
+        const aiRes = await fetch('/api/admin/ai-config', { headers });
+        const aiConfig = await aiRes.json();
+        document.getElementById('aiBaseUrlInput').value = aiConfig.apiBaseUrl || '';
+        document.getElementById('aiApiKeyInput').value = aiConfig.apiKey || '';
+        document.getElementById('aiModelInput').value = aiConfig.aiModel || '';
+        document.getElementById('aiModelImageInput').value = aiConfig.aiModelImage || '';
+      } catch (e) {
+        console.error('Load AI config error:', e);
+      }
+    }
+
+    // ===== AI Config =====
+    function toggleKeyVisibility() {
+      const input = document.getElementById('aiApiKeyInput');
+      const btn = document.getElementById('toggleKeyBtn');
+      if (input.type === 'password') {
+        input.type = 'text';
+        btn.textContent = '🙈';
+      } else {
+        input.type = 'password';
+        btn.textContent = '👁️';
+      }
+    }
+
+    async function saveAIConfig() {
+      const config = {
+        apiBaseUrl: document.getElementById('aiBaseUrlInput').value.trim(),
+        apiKey: document.getElementById('aiApiKeyInput').value.trim(),
+        aiModel: document.getElementById('aiModelInput').value.trim(),
+        aiModelImage: document.getElementById('aiModelImageInput').value.trim(),
+      };
+
+      const resultSpan = document.getElementById('aiTestResult');
+
+      if (!config.apiBaseUrl || !config.apiKey) {
+        resultSpan.innerHTML = '<span style="color: #ef4444;">❌ 请至少填写 API 地址和 API Key</span>';
+        return;
+      }
+
+      const btn = document.querySelector('[onclick="saveAIConfig()"]');
+      btn.disabled = true;
+      btn.textContent = '⏳ 保存中...';
+      resultSpan.innerHTML = '';
+
+      try {
+        const res = await fetch('/api/admin/ai-config', {
+          method: 'POST', headers,
+          body: JSON.stringify(config)
+        });
+        const data = await res.json();
+        if (data.success) {
+          resultSpan.innerHTML = '<span style="color: #22c55e;">✅ AI配置已保存！</span>';
+        } else {
+          resultSpan.innerHTML = '<span style="color: #ef4444;">❌ 保存失败: ' + (data.message || '未知错误') + '</span>';
+        }
+      } catch (e) {
+        resultSpan.innerHTML = '<span style="color: #ef4444;">❌ 保存失败: ' + e.message + '</span>';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '💾 保存配置';
+      }
+    }
+
+    async function testAIConfig() {
+      const btn = document.getElementById('testAIBtn');
+      const resultSpan = document.getElementById('aiTestResult');
+      const detailDiv = document.getElementById('aiTestDetail');
+
+      const apiBaseUrl = document.getElementById('aiBaseUrlInput').value.trim();
+      const apiKey = document.getElementById('aiApiKeyInput').value.trim();
+      const aiModel = document.getElementById('aiModelInput').value.trim();
+
+      if (!apiBaseUrl || !apiKey || !aiModel) {
+        resultSpan.innerHTML = '<span style="color: #ef4444;">❌ 请先填写完整的API配置</span>';
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = '⏳ 测试中...';
+      resultSpan.innerHTML = '<span style="color: var(--neon-blue);">正在连接API...</span>';
+      detailDiv.style.display = 'none';
+
+      try {
+        const res = await fetch('/api/admin/ai-config/test', {
+          method: 'POST', headers,
+          body: JSON.stringify({ apiBaseUrl, apiKey, aiModel })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+          resultSpan.innerHTML = `<span style="color: #22c55e;">✅ 连接成功 (${data.elapsed}ms)</span>`;
+          detailDiv.style.display = 'block';
+          detailDiv.innerHTML = `<span style="color: #22c55e;">${data.message}</span><br><small style="color: var(--text-muted);">模型: ${data.model}</small>`;
+        } else {
+          resultSpan.innerHTML = `<span style="color: #ef4444;">❌ 连接失败</span>`;
+          detailDiv.style.display = 'block';
+          detailDiv.innerHTML = `<span style="color: #ef4444;">${data.message}</span>`;
+        }
+      } catch (e) {
+        resultSpan.innerHTML = `<span style="color: #ef4444;">❌ 请求失败: ${e.message}</span>`;
+        detailDiv.style.display = 'none';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '🧪 测试连接';
+      }
+    }
+    async function changeAdminPassword() {
+      const currentPw = document.getElementById('currentPwInput').value;
+      const newPw = document.getElementById('newPwInput').value;
+      const newPw2 = document.getElementById('newPwInput2').value;
+      const resultSpan = document.getElementById('pwChangeResult');
+
+      if (!currentPw || !newPw) {
+        resultSpan.innerHTML = '<span style="color: #ef4444;">请填写完整</span>';
+        return;
+      }
+      if (newPw.length < 4) {
+        resultSpan.innerHTML = '<span style="color: #ef4444;">新密码至少4位</span>';
+        return;
+      }
+      if (newPw !== newPw2) {
+        resultSpan.innerHTML = '<span style="color: #ef4444;">两次密码不一致</span>';
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/admin/change-password', {
+          method: 'POST', headers,
+          body: JSON.stringify({ currentPassword: currentPw, newPassword: newPw })
+        });
+        const data = await res.json();
+        if (data.success) {
+          resultSpan.innerHTML = '<span style="color: #22c55e;">✅ 密码修改成功！即将重新登录...</span>';
+          localStorage.setItem('adminPassword', newPw);
+          // 更新当前 headers 中的密码
+          headers['x-admin-password'] = newPw;
+          document.getElementById('currentPwInput').value = '';
+          document.getElementById('newPwInput').value = '';
+          document.getElementById('newPwInput2').value = '';
+        } else {
+          resultSpan.innerHTML = `<span style="color: #ef4444;">❌ ${data.error}</span>`;
+        }
+      } catch(e) {
+        resultSpan.innerHTML = `<span style="color: #ef4444;">请求失败</span>`;
+      }
     }
 
     async function clearAllData(clearUploads) {

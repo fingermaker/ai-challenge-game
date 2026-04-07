@@ -7,7 +7,19 @@
   <link rel="stylesheet" href="/css/main.css">
   <style>
     .login-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; z-index: 1; position: relative; }
-    .login-card { width: 100%; max-width: 400px; text-align: center; }
+    .login-card { width: 100%; max-width: 420px; text-align: center; }
+    .input-group { margin-bottom: 1rem; text-align: left; }
+    .input-group label { display: block; margin-bottom: 4px; color: var(--text-secondary); font-size: 0.9rem; }
+    .hidden { display: none !important; }
+    .change-pw-hint {
+      background: rgba(251, 146, 60, 0.15);
+      border: 1px solid rgba(251, 146, 60, 0.3);
+      border-radius: var(--radius-sm);
+      padding: 0.75rem 1rem;
+      margin-bottom: 1.5rem;
+      color: #fb923c;
+      font-size: 0.9rem;
+    }
   </style>
 </head>
 <body>
@@ -16,32 +28,152 @@
       <div style="font-size: 3.5rem; margin-bottom: 1rem;">🎓</div>
       <h1 class="gradient-text" style="font-size: 1.75rem; margin-bottom: 0.5rem;">教师控制后台</h1>
       <p style="color: var(--text-secondary); margin-bottom: 2rem;">AI 挑战赛管理系统</p>
-      <div class="input-group">
-        <label>管理密码</label>
-        <input type="password" class="input" id="passwordInput" placeholder="请输入管理密码" onkeypress="if(event.key==='Enter')login()">
+
+      <!-- Login Form -->
+      <div id="loginForm">
+        <div class="input-group">
+          <label>管理密码</label>
+          <input type="password" class="input" id="passwordInput" placeholder="请输入管理密码 (默认: admin123)" onkeypress="if(event.key==='Enter')login()">
+        </div>
+        <button class="btn btn-primary btn-lg" style="width: 100%;" onclick="login()" id="loginBtn">🔐 登录后台</button>
       </div>
-      <button class="btn btn-primary btn-lg" style="width: 100%;" onclick="login()">🔐 登录后台</button>
+
+      <!-- Force Change Password Form -->
+      <div id="changePwForm" class="hidden">
+        <div class="change-pw-hint">
+          ⚠️ 首次登录，请修改默认密码以确保安全！
+        </div>
+        <div class="input-group">
+          <label>新密码</label>
+          <input type="password" class="input" id="newPwInput" placeholder="输入新密码（至少4位）" onkeypress="if(event.key==='Enter')document.getElementById('newPwInput2').focus()">
+        </div>
+        <div class="input-group">
+          <label>确认新密码</label>
+          <input type="password" class="input" id="newPwInput2" placeholder="再次输入新密码" onkeypress="if(event.key==='Enter')changePassword()">
+        </div>
+        <button class="btn btn-primary btn-lg" style="width: 100%;" onclick="changePassword()" id="changePwBtn">🔑 设置新密码</button>
+      </div>
+
       <p id="errorMsg" style="color: #ef4444; margin-top: 1rem; display: none;"></p>
+      <p id="successMsg" style="color: #22c55e; margin-top: 1rem; display: none;"></p>
     </div>
   </div>
   <script>
     if (localStorage.getItem('adminPassword')) {
       window.location.href = '/admin/dashboard.html';
     }
+
+    let currentPassword = '';
+
     async function login() {
       const pw = document.getElementById('passwordInput').value;
+      const btn = document.getElementById('loginBtn');
+      const errEl = document.getElementById('errorMsg');
+      errEl.style.display = 'none';
+
+      if (!pw) {
+        errEl.textContent = '请输入密码';
+        errEl.style.display = 'block';
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = '⏳ 登录中...';
+
       try {
-        const res = await fetch('/api/admin/config', { headers: { 'x-admin-password': pw } });
-        if (res.ok) {
+        const res = await fetch('/api/admin/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: pw })
+        });
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+          errEl.textContent = data.error || '密码错误';
+          errEl.style.display = 'block';
+          btn.disabled = false;
+          btn.textContent = '🔐 登录后台';
+          return;
+        }
+
+        currentPassword = pw;
+
+        if (!data.passwordChanged) {
+          // 首次登录，强制修改密码
+          document.getElementById('loginForm').classList.add('hidden');
+          document.getElementById('changePwForm').classList.remove('hidden');
+          errEl.style.display = 'none';
+        } else {
+          // 已改过密码，直接进入
           localStorage.setItem('adminPassword', pw);
           window.location.href = '/admin/dashboard.html';
-        } else {
-          document.getElementById('errorMsg').textContent = '密码错误';
-          document.getElementById('errorMsg').style.display = 'block';
         }
       } catch(e) {
-        document.getElementById('errorMsg').textContent = '连接失败';
-        document.getElementById('errorMsg').style.display = 'block';
+        errEl.textContent = '连接失败: ' + e.message;
+        errEl.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = '🔐 登录后台';
+      }
+    }
+
+    async function changePassword() {
+      const newPw = document.getElementById('newPwInput').value;
+      const newPw2 = document.getElementById('newPwInput2').value;
+      const errEl = document.getElementById('errorMsg');
+      const successEl = document.getElementById('successMsg');
+      const btn = document.getElementById('changePwBtn');
+
+      errEl.style.display = 'none';
+      successEl.style.display = 'none';
+
+      if (!newPw || newPw.length < 4) {
+        errEl.textContent = '新密码至少4位';
+        errEl.style.display = 'block';
+        return;
+      }
+      if (newPw !== newPw2) {
+        errEl.textContent = '两次输入的密码不一致';
+        errEl.style.display = 'block';
+        return;
+      }
+      if (newPw === 'admin123') {
+        errEl.textContent = '请使用一个不同于默认密码的新密码';
+        errEl.style.display = 'block';
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = '⏳ 保存中...';
+
+      try {
+        const res = await fetch('/api/admin/change-password', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-admin-password': currentPassword
+          },
+          body: JSON.stringify({ currentPassword, newPassword: newPw })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+          localStorage.setItem('adminPassword', newPw);
+          successEl.textContent = '✅ 密码修改成功！正在进入后台...';
+          successEl.style.display = 'block';
+          setTimeout(() => {
+            window.location.href = '/admin/dashboard.html';
+          }, 1500);
+        } else {
+          errEl.textContent = data.error || '修改失败';
+          errEl.style.display = 'block';
+          btn.disabled = false;
+          btn.textContent = '🔑 设置新密码';
+        }
+      } catch(e) {
+        errEl.textContent = '请求失败: ' + e.message;
+        errEl.style.display = 'block';
+        btn.disabled = false;
+        btn.textContent = '🔑 设置新密码';
       }
     }
   </script>
