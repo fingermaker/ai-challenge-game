@@ -407,6 +407,29 @@ curl https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions \
   -d '{"model":"qwen3.6-plus","messages":[{"role":"user","content":"hello"}]}'
 ```
 
+### Q: Docker 构建报错 `failed to fetch anonymous token` 或网络连接超时？
+这是因为国内网络无法直接访问 Docker Hub 官方镜像库。解决方法有两种：
+**方法一：使用代理（推荐，如果你有科学上网工具）**
+1. 打开 Docker Desktop，点击右上角齿轮 ⚙️ (Settings)
+2. 左侧选择 **Resources** -> **Proxies**
+3. 开启 manual proxy configuration
+4. 填入你的本地代理地址（例如：`http://127.0.0.1:7890`）
+5. 点击 Apply & restart，然后再试
+
+**方法二：配置镜像加速器**
+1. 打开 Docker Desktop，点击右上角齿轮 ⚙️ (Settings)
+2. 左侧选择 **Docker Engine**
+3. 在右侧 JSON 配置中加入 `registry-mirrors`：
+```json
+{
+  "registry-mirrors": [
+    "https://dockerhub.icu",
+    "https://docker.m.daocloud.io"
+  ]
+}
+```
+4. 点击 Apply & restart，然后再试（注意：国内公共镜像站经常失效，如果不行建议尝试方法一或自行获取阿里云个人专属加速器地址）。
+
 ### Q: Docker 构建失败（better-sqlite3）？
 `better-sqlite3` 需要编译环境，Dockerfile 已包含必要的构建工具。如果仍有问题：
 ```bash
