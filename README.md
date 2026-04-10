@@ -19,7 +19,7 @@
 | 端口 | 默认 3000（可在 .env 修改） |
 | 数据库 | SQLite（内嵌，无需安装） |
 | AI 服务 | 阿里百炼 DashScope API |
-| 默认后台密码 | `admin123`（首次登录强制修改） |
+| 默认后台密码 | `admin1234`（首次登录强制修改） |
 | 后台地址 | `http://你的IP:3000/admin/` |
 | 学生入口 | `http://你的IP:3000/` |
 
@@ -68,7 +68,7 @@ copy .env.example .env
 编辑 `.env` 文件（用记事本即可）：
 ```env
 PORT=3000
-ADMIN_PASSWORD=admin123
+ADMIN_PASSWORD=admin1234
 GROUP_COUNT=10
 ```
 
