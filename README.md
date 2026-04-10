@@ -442,7 +442,7 @@ docker build --no-cache -t ai-challenge .
 # 删除数据库重新初始化（会清除所有数据！）
 rm server/data/game.db
 npm run seed
-# 默认密码将重置为 admin123
+# 默认密码将重置为 admin1234
 ```
 
 ### Q: 如何备份比赛数据？
